@@ -1,11 +1,205 @@
 generator client {
-  provider             = "prisma-client"
-  output               = "../generated/prisma"
-  runtime              = "nodejs"
-  moduleFormat         = "esm"
-  importFileExtension  = "ts"
+  provider            = "prisma-client"
+  output              = "../generated/prisma"
+  runtime             = "nodejs"
+  moduleFormat        = "esm"
+  importFileExtension = "ts"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum Currency {
+  GTQ
+}
+
+enum AccountType {
+  CASH
+  BANK
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum DebtPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum DebtStatus {
+  PENDING
+  PAID
+}
+
+enum ReceivableConfidence {
+  CONFIRMED
+  UNCONFIRMED
+}
+
+enum ReceivableStatus {
+  PENDING
+  COLLECTED
+}
+
+enum InventoryMovementType {
+  IN
+  OUT
+}
+
+model Business {
+  id                   Int            @id @default(autoincrement())
+  name                 String
+  currency             Currency
+  minimumSafetyBalance Decimal        @db.Decimal(14, 2)
+  createdAt            DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime       @updatedAt @db.Timestamptz(3)
+  accounts             Account[]
+  categories           Category[]
+  transactions         Transaction[]
+  fixedExpenses        FixedExpense[]
+  debts                Debt[]
+  receivables          Receivable[]
+  products             Product[]
+  inventoryMovements   InventoryMovement[]
+}
+
+model Account {
+  id             Int           @id @default(autoincrement())
+  businessId     Int
+  name           String
+  type           AccountType
+  initialBalance Decimal       @db.Decimal(14, 2)
+  createdAt      DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @db.Timestamptz(3)
+  business       Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  transactions   Transaction[]
+
+  @@unique([businessId, name])
+  @@index([businessId])
+}
+
+model Category {
+  id           Int             @id @default(autoincrement())
+  businessId   Int
+  name         String
+  type         TransactionType
+  createdAt    DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime        @updatedAt @db.Timestamptz(3)
+  business     Business        @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  transactions Transaction[]
+  fixedExpenses FixedExpense[]
+
+  @@unique([businessId, type, name])
+  @@index([businessId])
+}
+
+model Transaction {
+  id         Int             @id @default(autoincrement())
+  businessId Int
+  accountId  Int
+  categoryId Int
+  type       TransactionType
+  amount     Decimal         @db.Decimal(14, 2)
+  date       DateTime        @db.Date
+  description String?
+  createdAt  DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime        @updatedAt @db.Timestamptz(3)
+  business   Business        @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  account    Account         @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category   Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([businessId])
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([businessId, type, date])
+}
+
+model FixedExpense {
+  id         Int      @id @default(autoincrement())
+  businessId Int
+  categoryId Int
+  name       String
+  amount     Decimal  @db.Decimal(14, 2)
+  dueDay     Int
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([businessId])
+  @@index([categoryId])
+}
+
+model Debt {
+  id         Int          @id @default(autoincrement())
+  businessId Int
+  description String
+  amount     Decimal      @db.Decimal(14, 2)
+  dueDate    DateTime     @db.Date
+  priority   DebtPriority
+  status     DebtStatus   @default(PENDING)
+  createdAt  DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime     @updatedAt @db.Timestamptz(3)
+  business   Business     @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@index([businessId])
+  @@index([businessId, status, dueDate])
+  @@index([businessId, priority])
+}
+
+model Receivable {
+  id            Int                  @id @default(autoincrement())
+  businessId    Int
+  description   String
+  amount        Decimal              @db.Decimal(14, 2)
+  expectedDate  DateTime             @db.Date
+  confidence    ReceivableConfidence
+  status        ReceivableStatus     @default(PENDING)
+  createdAt     DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime             @updatedAt @db.Timestamptz(3)
+  business      Business             @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@index([businessId])
+  @@index([businessId, status, expectedDate])
+  @@index([businessId, confidence])
+}
+
+model Product {
+  id              Int                 @id @default(autoincrement())
+  businessId      Int
+  name            String
+  stock           Int
+  unitCost        Decimal             @db.Decimal(14, 2)
+  salePrice       Decimal             @db.Decimal(14, 2)
+  minimumStock    Int
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime            @updatedAt @db.Timestamptz(3)
+  business        Business            @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  movements       InventoryMovement[]
+
+  @@unique([businessId, name])
+  @@index([businessId])
+}
+
+model InventoryMovement {
+  id         Int                   @id @default(autoincrement())
+  businessId Int
+  productId  Int
+  type       InventoryMovementType
+  quantity   Int
+  date       DateTime              @db.Date
+  note       String?
+  createdAt  DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime              @updatedAt @db.Timestamptz(3)
+  business   Business              @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  product    Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([businessId])
+  @@index([productId])
+  @@index([productId, date])
 }
