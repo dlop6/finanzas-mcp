@@ -36,3 +36,14 @@ export interface JsonRpcErrorResponse<Data = unknown> {
   id: JsonRpcId | null;
   error: JsonRpcErrorObject<Data>;
 }
+
+export type JsonRpcMessage =
+  | JsonRpcRequest
+  | JsonRpcNotification
+  | JsonRpcSuccessResponse
+  | JsonRpcErrorResponse;
+
+export * from "./errors";
+export * from "./ids";
+export * from "./responses";
+export * from "./validation";
