@@ -9,7 +9,10 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck:app": "tsc --noEmit -p tsconfig.json",
+    "typecheck:host": "tsc --noEmit -p host/tsconfig.json",
+    "typecheck:finance": "tsc --noEmit -p servers/finance-mcp/tsconfig.json",
+    "typecheck": "npm run typecheck:app && npm run typecheck:host && npm run typecheck:finance"
   },
   "dependencies": {
     "next": "16.3.0",
