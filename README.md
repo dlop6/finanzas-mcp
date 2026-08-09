@@ -33,16 +33,18 @@ The Host and Finance MCP communicate exclusively through MCP/JSON-RPC messages. 
 
 - Node.js 24.14 or compatible
 - npm
-
-PostgreSQL and service-specific environment variables will be added in later tickets. Do not commit real `.env` files or secrets.
+- Docker Desktop
 
 ## Install
 
 ```bash
 npm ci
+copy .env.example .env
 ```
 
-## Development
+The `.env` file is local-only and ignored by Git. Never commit real secrets.
+
+## Application development
 
 ```bash
 npm run dev
@@ -60,4 +62,20 @@ npm run lint
 npm run build
 ```
 
-`npm test` runs Vitest once in a non-interactive mode. The smoke test renders the existing synchronous Next.js Home component with React Testing Library, and the architecture test protects the Host boundary.
+## Local PostgreSQL and Prisma
+
+The project uses one PostgreSQL 17 Alpine container on host port `5434`. Existing PostgreSQL containers on ports `5432` and `5433` belong to another project and are not modified.
+
+```bash
+npm run db:up
+npm run db:validate
+npm run db:generate
+npm run db:migrate
+npm run db:migrate:status
+npm run db:check
+npm run db:seed
+npm run db:reset
+npm run db:down
+```
+
+`db:reset` deletes local database data before recreating migrations. `db:down` stops the container and preserves the project volume. UN-5 only provides the technical seed hook; financial entities are added in UN-6.
