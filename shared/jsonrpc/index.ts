@@ -1,8 +1,9 @@
 /** The identifier shared by a request and its response. */
 export type JsonRpcId = string | number;
+export type JsonRpcParams = Record<string, unknown> | unknown[];
 
 /** A JSON-RPC 2.0 request that expects a response. */
-export interface JsonRpcRequest<Params = unknown> {
+export interface JsonRpcRequest<Params = JsonRpcParams> {
   jsonrpc: "2.0";
   id: JsonRpcId;
   method: string;
@@ -10,7 +11,7 @@ export interface JsonRpcRequest<Params = unknown> {
 }
 
 /** A JSON-RPC 2.0 notification that deliberately has no identifier. */
-export interface JsonRpcNotification<Params = unknown> {
+export interface JsonRpcNotification<Params = JsonRpcParams> {
   jsonrpc: "2.0";
   method: string;
   params?: Params;

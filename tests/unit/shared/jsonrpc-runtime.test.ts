@@ -5,8 +5,14 @@ import {
   createJsonRpcRequestIdGenerator,
   createMethodNotFoundResponse,
   createJsonRpcSuccessResponse,
+  isJsonRpcErrorResponse,
+  isJsonRpcNotification,
+  isJsonRpcRequest,
+  isJsonRpcSuccessResponse,
   JSON_RPC_ERROR_CODES,
   parseJsonRpcMessage,
+  serializeJsonRpcMessage,
+  validateJsonRpcMessage,
 } from "@/shared/jsonrpc";
 
 function expectError(result: ReturnType<typeof parseJsonRpcMessage>, code: number) {
@@ -70,5 +76,21 @@ describe("JSON-RPC parsing and validation", () => {
 
     expect(secondId).toBe(firstId + 1);
     expect(response.id).toBe(firstId);
+  });
+
+  it("serializes valid messages and exposes their type guards", () => {
+    const request = { jsonrpc: "2.0", id: 1, method: "accounts.get", params: { accountId: 1 } } as const;
+    const notification = { jsonrpc: "2.0", method: "accounts.refresh", params: [] } as const;
+    const success = createJsonRpcSuccessResponse(1, { ok: true });
+    const error = createMethodNotFoundResponse(1);
+
+    expect(serializeJsonRpcMessage(request)).toBe(JSON.stringify(request));
+    expect(isJsonRpcRequest(request)).toBe(true);
+    expect(isJsonRpcNotification(notification)).toBe(true);
+    expect(isJsonRpcSuccessResponse(success)).toBe(true);
+    expect(isJsonRpcErrorResponse(error)).toBe(true);
+    expect(
+      validateJsonRpcMessage({ jsonrpc: "2.0", id: 1, method: "accounts.get", params: true }).ok,
+    ).toBe(false);
   });
 });

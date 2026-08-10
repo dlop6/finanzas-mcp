@@ -137,3 +137,31 @@ export const parseJsonRpc = parseJsonRpcMessage;
 export function isJsonRpcMessage(value: unknown): value is JsonRpcMessage {
   return validateJsonRpcMessage(value).ok;
 }
+
+export function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
+  const result = validateJsonRpcMessage(value);
+
+  return result.ok && isObject(result.message) && hasOwn(result.message, "method") && hasOwn(result.message, "id");
+}
+
+export function isJsonRpcNotification(value: unknown): value is JsonRpcNotification {
+  const result = validateJsonRpcMessage(value);
+
+  return result.ok && isObject(result.message) && hasOwn(result.message, "method") && !hasOwn(result.message, "id");
+}
+
+export function isJsonRpcSuccessResponse(value: unknown): value is JsonRpcSuccessResponse {
+  const result = validateJsonRpcMessage(value);
+
+  return result.ok && isObject(result.message) && hasOwn(result.message, "result");
+}
+
+export function isJsonRpcErrorResponse(value: unknown): value is JsonRpcErrorResponse {
+  const result = validateJsonRpcMessage(value);
+
+  return result.ok && isObject(result.message) && hasOwn(result.message, "error");
+}
+
+export function serializeJsonRpcMessage(message: JsonRpcMessage): string {
+  return JSON.stringify(message);
+}
