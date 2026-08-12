@@ -8,6 +8,7 @@ import {
   StdioTransportError,
 } from "@/host/mcp-clients/stdio-jsonrpc-client";
 import { startFinanceMcpLocal } from "@/host/mcp-clients/finance-mcp-local";
+import { startFinanceMcpSessionLocal } from "@/host/mcp-clients/finance-mcp-local";
 
 const projectRoot = process.cwd();
 const fixturePath = resolve(projectRoot, "tests/integration/fixtures/stdio-fixture.ts");
@@ -62,6 +63,20 @@ afterEach(async () => {
 });
 
 describe("local MCP STDIO transport", () => {
+  it("completes the MCP initialize handshake and becomes ready", async () => {
+    const client = await startFinanceMcpSessionLocal({ onStderr: () => undefined });
+
+    try {
+      expect(client.state).toBe("READY");
+      await expect(client.toolsList()).rejects.toMatchObject({
+        name: "JsonRpcRemoteError",
+        code: -32601,
+      });
+    } finally {
+      await client.close();
+    }
+  });
+
   it("starts the real Finance MCP and returns a JSON-RPC method-not-found error", async () => {
     const client = await startFinanceMcpLocal({ onStderr: () => undefined });
     clients.push(client);

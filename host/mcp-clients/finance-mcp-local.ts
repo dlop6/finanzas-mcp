@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { StdioJsonRpcClient, type StdioJsonRpcClientOptions } from "./stdio-jsonrpc-client";
+import { McpLifecycleClient } from "./mcp-lifecycle-client";
 
 const WINDOWS_ENVIRONMENT_KEYS = ["PATH", "SystemRoot", "ComSpec", "PATHEXT", "TEMP", "TMP"] as const;
 const POSIX_ENVIRONMENT_KEYS = ["PATH", "TMPDIR", "LANG", "LC_ALL"] as const;
@@ -39,5 +40,15 @@ export async function startFinanceMcpLocal(
 ): Promise<StdioJsonRpcClient> {
   const client = new StdioJsonRpcClient(localFinanceMcpConfiguration(options));
   await client.start();
+  return client;
+}
+
+export async function startFinanceMcpSessionLocal(
+  options: StartFinanceMcpLocalOptions = {},
+): Promise<McpLifecycleClient> {
+  const transport = await startFinanceMcpLocal(options);
+  const client = new McpLifecycleClient(transport);
+
+  await client.initialize();
   return client;
 }
