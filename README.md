@@ -37,6 +37,18 @@ Malformed protocol requests and unknown tools return JSON-RPC errors. Arguments 
 
 The production registry is intentionally empty at this stage. Financial tools and write confirmations are implemented in later tickets.
 
+## Financial persistence
+
+Finance MCP accesses PostgreSQL through five cohesive repositories: business and catalog data, transactions, debts, receivables, and inventory. The repository factory receives the single Prisma Client exported by `database/client.ts`; repositories never create database clients themselves.
+
+The MVP requires exactly one active business. A missing or ambiguous business configuration fails with a controlled error instead of selecting an arbitrary record. Every repository query and mutation is restricted to that business.
+
+Repository results keep Prisma `Decimal` values and `Date` objects internally, so financial values are never converted to floating-point numbers. Missing records, uniqueness conflicts, and unexpected persistence failures are exposed as controlled repository errors without Prisma messages, SQL, credentials, or connection URLs.
+
+Inventory movements update the product stock and create or delete the movement in one database transaction. Deleting a movement reverses its stock effect; any operation that would make stock negative is rejected without partial changes.
+
+The persistence layer does not implement MCP financial tools, financial calculations, LLM behavior, or write confirmations. Those responsibilities are added in subsequent tickets.
+
 ## Requirements
 
 - Node.js 24.14 or compatible
@@ -83,11 +95,14 @@ npm run db:migrate:status
 npm run db:check
 npm run db:seed
 npm run db:verify
+npm run db:repositories:smoke
 npm run db:reset
 npm run db:down
 ```
 
 `db:reset` deletes local database data, recreates migrations, and runs the configured local seed. `db:down` stops the container and preserves the project volume. The seed is destructive to the local project database: it truncates the financial tables, resets identities, and loads the deterministic demo dataset. Never run it against production.
+
+`db:repositories:smoke` is a read-only local check that uses the Finance MCP repositories against the deterministic seed. It requires the local database to be running and seeded.
 
 ## Financial schema and deterministic demo data
 
