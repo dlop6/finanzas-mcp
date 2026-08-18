@@ -97,6 +97,13 @@ describe("Finance MCP lifecycle", () => {
     const lifecycle = new FinanceMcpLifecycle(new FinanceToolRegistry([testTool]));
     const beforeReady = await lifecycle.handleMessage({ jsonrpc: "2.0", id: 1, method: MCP_METHODS.TOOLS_LIST });
     expect(beforeReady).toMatchObject({ id: 1, error: { code: -32600 } });
+    const callBeforeReady = await lifecycle.handleMessage({
+      jsonrpc: "2.0",
+      id: 2,
+      method: MCP_METHODS.TOOLS_CALL,
+      params: { name: "test.echo", arguments: { message: "hello" } },
+    });
+    expect(callBeforeReady).toMatchObject({ id: 2, error: { code: -32600 } });
 
     const ready = await readyLifecycle();
     const listed = await ready.handleMessage({ jsonrpc: "2.0", id: 2, method: MCP_METHODS.TOOLS_LIST });

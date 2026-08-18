@@ -40,4 +40,35 @@ describe("Finance MCP STDIO server", () => {
     });
     expect(logs.join("")).toContain("invalid response");
   });
+
+  it("returns an internal error without exposing an unexpected handler failure", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const diagnostics = new PassThrough();
+    const messages: string[] = [];
+    const logs: string[] = [];
+
+    output.on("data", (chunk: Buffer) => messages.push(chunk.toString()));
+    diagnostics.on("data", (chunk: Buffer) => logs.push(chunk.toString()));
+
+    const server = runFinanceMcpStdioServer({
+      input,
+      output,
+      diagnostics,
+      handleMessage: () => {
+        throw new Error("sensitive internal detail");
+      },
+    });
+
+    input.end(`${JSON.stringify({ jsonrpc: "2.0", id: "request-1", method: "test.request" })}\n`);
+    await server;
+
+    expect(JSON.parse(messages[0])).toEqual({
+      jsonrpc: "2.0",
+      id: "request-1",
+      error: { code: -32603, message: "Internal error" },
+    });
+    expect(messages.join("")).not.toContain("sensitive internal detail");
+    expect(logs.join("")).toContain("request handler failed");
+  });
 });

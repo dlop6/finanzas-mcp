@@ -17,6 +17,9 @@ describe("MCP lifecycle client", () => {
     await expect(client.toolsList()).rejects.toMatchObject({
       code: "INVALID_STATE",
     });
+    await expect(client.toolsCall("test.echo")).rejects.toMatchObject({
+      code: "INVALID_STATE",
+    });
     expect(client.state).toBe("DISCONNECTED");
   });
 
