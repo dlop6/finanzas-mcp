@@ -35,7 +35,7 @@ After the MCP lifecycle handshake, the Host uses `tools/list` to discover the Fi
 
 Malformed protocol requests and unknown tools return JSON-RPC errors. Arguments that do not satisfy a valid tool schema return a successful MCP tool result with `isError: true`, so a future LLM can read and correct them. Internal metadata such as `isWriteOperation` is not exposed by `tools/list`.
 
-The production registry currently provides transaction tools: `record_income`, `record_expense`, `list_transactions`, `update_transaction`, and `delete_transaction`. All monetary input is a decimal string and output is normalized to two decimal places. Mutations return the changed transaction plus the derived current balance: initial account balances plus income minus expenses. Write confirmation remains a Host responsibility and is not performed by Finance MCP.
+The production registry currently provides transaction tools (`record_income`, `record_expense`, `list_transactions`, `update_transaction`, `delete_transaction`) and debt tools (`record_debt`, `list_debts`, `update_debt`, `mark_debt_paid`, `delete_debt`). All monetary input is a decimal string and output is normalized to two decimal places. Transaction mutations return the changed transaction plus the derived current balance: initial account balances plus income minus expenses. Paying a debt changes only its status; it does not create an expense. Write confirmation remains a Host responsibility and is not performed by Finance MCP.
 
 ## Financial persistence
 
