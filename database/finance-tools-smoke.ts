@@ -5,10 +5,11 @@ async function main(): Promise<void> {
   let incomeId: number | undefined;
   let expenseId: number | undefined;
   let debtId: number | undefined;
+  let receivableId: number | undefined;
   try {
     const tools = await client.toolsList();
     const names = tools.tools.map((tool) => tool.name);
-    const expected = ["record_income", "record_expense", "list_transactions", "update_transaction", "delete_transaction", "record_debt", "list_debts", "update_debt", "mark_debt_paid", "delete_debt"];
+    const expected = ["record_income", "record_expense", "list_transactions", "update_transaction", "delete_transaction", "record_debt", "list_debts", "update_debt", "mark_debt_paid", "delete_debt", "record_receivable", "list_receivables", "update_receivable", "mark_receivable_collected", "delete_receivable"];
     if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error("Unexpected Finance MCP tool registry.");
 
     const income = await client.toolsCall("record_income", { accountId: 1, categoryId: 1, amount: "100.00", date: "2026-08-08", description: "Smoke income" });
@@ -27,11 +28,16 @@ async function main(): Promise<void> {
     debtId = (debt.structuredContent as { debt: { id: number } }).debt.id;
     await client.toolsCall("mark_debt_paid", { debtId });
     await client.toolsCall("delete_debt", { debtId }); debtId = undefined;
+    const receivable = await client.toolsCall("record_receivable", { description: "Smoke receivable", amount: "10.00", expectedDate: "2026-08-20", confidence: "CONFIRMED" });
+    receivableId = (receivable.structuredContent as { receivable: { id: number } }).receivable.id;
+    await client.toolsCall("mark_receivable_collected", { receivableId });
+    await client.toolsCall("delete_receivable", { receivableId }); receivableId = undefined;
     await client.toolsCall("delete_transaction", { transactionId: expenseId }); expenseId = undefined;
     const deleted = await client.toolsCall("delete_transaction", { transactionId: incomeId }); incomeId = undefined;
     if ((deleted.structuredContent as { currentBalance: { amount: string } }).currentBalance.amount !== "19475.00") throw new Error("Cleanup did not restore the balance.");
     console.info("Finance transaction tools smoke check passed.");
   } finally {
+    if (receivableId !== undefined) await client.toolsCall("delete_receivable", { receivableId }).catch(() => undefined);
     if (debtId !== undefined) await client.toolsCall("delete_debt", { debtId }).catch(() => undefined);
     if (expenseId !== undefined) await client.toolsCall("delete_transaction", { transactionId: expenseId }).catch(() => undefined);
     if (incomeId !== undefined) await client.toolsCall("delete_transaction", { transactionId: incomeId }).catch(() => undefined);
