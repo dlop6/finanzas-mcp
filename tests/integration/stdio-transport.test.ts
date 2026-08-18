@@ -70,7 +70,12 @@ describe("local MCP STDIO transport", () => {
 
     try {
       expect(client.state).toBe("READY");
-      await expect(client.toolsList()).resolves.toEqual({ tools: [] });
+      await expect(client.toolsList()).resolves.toMatchObject({
+        tools: [
+          { name: "record_income" }, { name: "record_expense" }, { name: "list_transactions" },
+          { name: "update_transaction" }, { name: "delete_transaction" },
+        ],
+      });
     } finally {
       await client.close();
     }

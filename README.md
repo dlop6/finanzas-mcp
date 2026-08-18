@@ -35,7 +35,7 @@ After the MCP lifecycle handshake, the Host uses `tools/list` to discover the Fi
 
 Malformed protocol requests and unknown tools return JSON-RPC errors. Arguments that do not satisfy a valid tool schema return a successful MCP tool result with `isError: true`, so a future LLM can read and correct them. Internal metadata such as `isWriteOperation` is not exposed by `tools/list`.
 
-The production registry is intentionally empty at this stage. Financial tools and write confirmations are implemented in later tickets.
+The production registry currently provides transaction tools: `record_income`, `record_expense`, `list_transactions`, `update_transaction`, and `delete_transaction`. All monetary input is a decimal string and output is normalized to two decimal places. Mutations return the changed transaction plus the derived current balance: initial account balances plus income minus expenses. Write confirmation remains a Host responsibility and is not performed by Finance MCP.
 
 ## Financial persistence
 
@@ -96,6 +96,7 @@ npm run db:check
 npm run db:seed
 npm run db:verify
 npm run db:repositories:smoke
+npm run db:finance-tools:smoke
 npm run db:reset
 npm run db:down
 ```
@@ -103,6 +104,8 @@ npm run db:down
 `db:reset` deletes local database data, recreates migrations, and runs the configured local seed. `db:down` stops the container and preserves the project volume. The seed is destructive to the local project database: it truncates the financial tables, resets identities, and loads the deterministic demo dataset. Never run it against production.
 
 `db:repositories:smoke` is a read-only local check that uses the Finance MCP repositories against the deterministic seed. It requires the local database to be running and seeded.
+
+`db:finance-tools:smoke` starts the real Finance MCP through STDIO, completes the MCP lifecycle, exercises the transaction tools, and removes its temporary records through the same tools. It requires the local database to be running and seeded.
 
 ## Financial schema and deterministic demo data
 
