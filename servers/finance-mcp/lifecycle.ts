@@ -12,11 +12,15 @@ import {
 } from "@/shared/jsonrpc";
 import {
   isMcpInitializeRequestParams,
+  isMcpCallToolParams,
+  isMcpListToolsParams,
   MCP_METHODS,
   MCP_PROTOCOL_VERSION,
+  toMcpCallToolParams,
   type McpInitializeResult,
 } from "@/shared/mcp";
 import type { FinanceMcpMessageHandler } from "./stdio-server";
+import { FinanceToolRegistry } from "./tools/registry";
 
 export type FinanceMcpLifecycleState = "AWAITING_INITIALIZE" | "AWAITING_INITIALIZED" | "READY";
 
@@ -34,6 +38,8 @@ const INITIALIZE_RESULT: McpInitializeResult = {
 export class FinanceMcpLifecycle {
   private currentState: FinanceMcpLifecycleState = "AWAITING_INITIALIZE";
 
+  constructor(private readonly tools = new FinanceToolRegistry()) {}
+
   get state(): FinanceMcpLifecycleState {
     return this.currentState;
   }
@@ -47,11 +53,23 @@ export class FinanceMcpLifecycle {
     return undefined;
   };
 
-  private handleRequest(request: JsonRpcRequest): JsonRpcSuccessResponse | JsonRpcErrorResponse {
-    if (request.method !== MCP_METHODS.INITIALIZE) {
-      return createMethodNotFoundResponse(request.id);
+  private async handleRequest(request: JsonRpcRequest): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> {
+    if (request.method === MCP_METHODS.INITIALIZE) {
+      return this.handleInitialize(request);
     }
 
+    if (request.method === MCP_METHODS.TOOLS_LIST || request.method === MCP_METHODS.TOOLS_CALL) {
+      if (this.currentState !== "READY") {
+        return createInvalidRequestResponse(request.id);
+      }
+
+      return request.method === MCP_METHODS.TOOLS_LIST ? this.handleToolsList(request) : this.handleToolsCall(request);
+    }
+
+    return createMethodNotFoundResponse(request.id);
+  }
+
+  private handleInitialize(request: JsonRpcRequest): JsonRpcSuccessResponse | JsonRpcErrorResponse {
     if (this.currentState !== "AWAITING_INITIALIZE") {
       return createInvalidRequestResponse(request.id);
     }
@@ -71,6 +89,28 @@ export class FinanceMcpLifecycle {
 
     this.currentState = "AWAITING_INITIALIZED";
     return createJsonRpcSuccessResponse(request.id, INITIALIZE_RESULT);
+  }
+
+  private handleToolsList(request: JsonRpcRequest): JsonRpcSuccessResponse | JsonRpcErrorResponse {
+    if (!isMcpListToolsParams(request.params)) {
+      return createInvalidParamsResponse(request.id);
+    }
+
+    return createJsonRpcSuccessResponse(request.id, { tools: this.tools.list() });
+  }
+
+  private async handleToolsCall(request: JsonRpcRequest): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> {
+    if (!isMcpCallToolParams(request.params)) {
+      return createInvalidParamsResponse(request.id);
+    }
+
+    const params = toMcpCallToolParams(request.params);
+    const execution = await this.tools.execute(params.name, params.arguments);
+    if (!execution.ok && execution.reason === "NOT_FOUND") {
+      return createInvalidParamsResponse(request.id);
+    }
+
+    return createJsonRpcSuccessResponse(request.id, execution.result);
   }
 
   private handleNotification(notification: JsonRpcNotification): void {

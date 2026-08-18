@@ -29,6 +29,14 @@ docs/                        Architecture, capture, and evidence material
 
 The Host and Finance MCP communicate exclusively through MCP/JSON-RPC messages. Host code must not import Finance MCP tools, services, or repositories directly. These boundaries remain within the single repository to keep the project simple and easy to test.
 
+## MCP tools
+
+After the MCP lifecycle handshake, the Host uses `tools/list` to discover the Finance MCP tools and `tools/call` to invoke one by name. Tool definitions expose only `name`, `description`, and an `inputSchema` written in JSON Schema 2020-12. The Finance MCP validates arguments with Ajv before calling a handler.
+
+Malformed protocol requests and unknown tools return JSON-RPC errors. Arguments that do not satisfy a valid tool schema return a successful MCP tool result with `isError: true`, so a future LLM can read and correct them. Internal metadata such as `isWriteOperation` is not exposed by `tools/list`.
+
+The production registry is intentionally empty at this stage. Financial tools and write confirmations are implemented in later tickets.
+
 ## Requirements
 
 - Node.js 24.14 or compatible

@@ -9,10 +9,12 @@ import {
 } from "@/host/mcp-clients/stdio-jsonrpc-client";
 import { startFinanceMcpLocal } from "@/host/mcp-clients/finance-mcp-local";
 import { startFinanceMcpSessionLocal } from "@/host/mcp-clients/finance-mcp-local";
+import { McpLifecycleClient } from "@/host/mcp-clients/mcp-lifecycle-client";
 
 const projectRoot = process.cwd();
 const fixturePath = resolve(projectRoot, "tests/integration/fixtures/stdio-fixture.ts");
 const financeServerPath = resolve(projectRoot, "servers/finance-mcp/stdio.ts");
+const financeToolsFixturePath = resolve(projectRoot, "tests/integration/fixtures/finance-tools-fixture.ts");
 const clients: StdioJsonRpcClient[] = [];
 
 function fixtureClient(onStderr?: (text: string) => void): StdioJsonRpcClient {
@@ -68,10 +70,41 @@ describe("local MCP STDIO transport", () => {
 
     try {
       expect(client.state).toBe("READY");
-      await expect(client.toolsList()).rejects.toMatchObject({
-        name: "JsonRpcRemoteError",
-        code: -32601,
+      await expect(client.toolsList()).resolves.toEqual({ tools: [] });
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("discovers and calls a test-only tool over a real STDIO session", async () => {
+    const transport = new StdioJsonRpcClient({
+      command: process.execPath,
+      args: ["--import", "tsx", financeToolsFixturePath],
+      cwd: projectRoot,
+      env: process.env,
+    });
+    const client = new McpLifecycleClient(transport);
+
+    await transport.start();
+    await client.initialize();
+    try {
+      await expect(client.toolsList()).resolves.toEqual({
+        tools: [{
+          name: "test.echo",
+          description: "Returns the provided test message.",
+          inputSchema: {
+            type: "object",
+            properties: { message: { type: "string" } },
+            required: ["message"],
+            additionalProperties: false,
+          },
+        }],
       });
+      await expect(client.toolsCall("test.echo", { message: "hello" })).resolves.toEqual({
+        content: [{ type: "text", text: "hello" }],
+      });
+      await expect(client.toolsCall("test.echo", {})).resolves.toMatchObject({ isError: true });
+      await expect(client.toolsCall("missing.tool")).rejects.toMatchObject({ code: -32602 });
     } finally {
       await client.close();
     }

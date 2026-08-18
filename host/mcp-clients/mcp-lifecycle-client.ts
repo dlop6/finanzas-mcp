@@ -2,8 +2,12 @@ import {
   isMcpInitializeResult,
   MCP_METHODS,
   MCP_PROTOCOL_VERSION,
+  isMcpCallToolResult,
+  isMcpListToolsResult,
+  type McpCallToolResult,
   type McpImplementationInfo,
   type McpInitializeParams,
+  type McpListToolsResult,
 } from "@/shared/mcp";
 import { StdioJsonRpcClient, StdioTransportError } from "./stdio-jsonrpc-client";
 
@@ -51,14 +55,16 @@ export class McpLifecycleClient {
     }
   }
 
-  async toolsList(): Promise<unknown> {
+  async toolsList(): Promise<McpListToolsResult> {
     this.assertReady();
-    return this.transport.request(MCP_METHODS.TOOLS_LIST);
+    const result = await this.transport.request<unknown>(MCP_METHODS.TOOLS_LIST);
+    return this.assertProtocolResult(result, isMcpListToolsResult, "tools/list");
   }
 
-  async toolsCall(params: Record<string, unknown>): Promise<unknown> {
+  async toolsCall(name: string, args: Record<string, unknown> = {}): Promise<McpCallToolResult> {
     this.assertReady();
-    return this.transport.request(MCP_METHODS.TOOLS_CALL, params);
+    const result = await this.transport.request<unknown>(MCP_METHODS.TOOLS_CALL, { name, arguments: args });
+    return this.assertProtocolResult(result, isMcpCallToolResult, "tools/call");
   }
 
   async close(): Promise<void> {
@@ -74,5 +80,19 @@ export class McpLifecycleClient {
     if (this.currentState !== "READY") {
       throw new StdioTransportError("INVALID_STATE", "MCP client is not ready for tool operations");
     }
+  }
+
+  private async assertProtocolResult<Result>(
+    result: unknown,
+    guard: (value: unknown) => value is Result,
+    method: string,
+  ): Promise<Result> {
+    if (guard(result)) {
+      return result;
+    }
+
+    this.currentState = "CLOSED";
+    await this.transport.close();
+    throw new StdioTransportError("PROTOCOL_ERROR", `Finance MCP returned an invalid ${method} result`);
   }
 }
