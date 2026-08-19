@@ -14,6 +14,13 @@ export type AccountBalanceResult = { id: number; name: string; type: "CASH" | "B
 export type CurrentBalanceResult = { currency: "GTQ"; currentBalance: string; totalIncome: string; totalExpenses: string; accounts: AccountBalanceResult[] };
 export type CashFlowSummaryResult = { currency: "GTQ"; startDate: string; endDate: string; income: string; expenses: string; netCashFlow: string; transactionCount: number; currentBalance: string };
 export type CashFlowProjectionResult = { currency: "GTQ"; asOfDate: string; throughDate: string; horizonDays: 7 | 30; currentBalance: string; confirmedReceivables: string; unconfirmedReceivables: string; fixedExpenses: string; pendingDebts: string; safeProjectedBalance: string; potentialProjectedBalance: string; details: { confirmedReceivables: ReceivableResult[]; unconfirmedReceivables: ReceivableResult[]; fixedExpenses: Array<{ id: number; categoryId: number; name: string; amount: string; dueDay: number; dueDate: string }>; pendingDebts: DebtResult[] } };
+export type PurchaseViabilityStatus = "VIABLE" | "VIABLE_WITH_RISK" | "NOT_VIABLE";
+export type PurchaseViabilityResult = {
+  currency: "GTQ"; asOfDate: string; throughDate: string; horizonDays: 7 | 30; currentBalance: string; purchaseAmount: string;
+  confirmedReceivables: string; unconfirmedReceivables: string; fixedExpenses: string; pendingDebts: string;
+  safeProjectedBalance: string; potentialProjectedBalance: string; minimumSafetyBalance: string;
+  safeBalanceAfterPurchase: string; potentialBalanceAfterPurchase: string; maximumSafePurchase: string; status: PurchaseViabilityStatus;
+};
 
 export function moneyResult(amount: { toFixed: (digits: number) => string }, currency: Currency): MoneyResult {
   return { currency: currency as "GTQ", amount: amount.toFixed(2) };

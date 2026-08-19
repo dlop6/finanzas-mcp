@@ -4,6 +4,7 @@ export * from "./debt-service";
 export * from "./errors";
 export * from "./inventory-service";
 export * from "./projection-service";
+export * from "./purchase-viability-service";
 export * from "./receivable-service";
 export * from "./results";
 export * from "./transaction-service";

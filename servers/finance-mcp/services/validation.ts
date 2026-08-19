@@ -31,6 +31,11 @@ export function parsePositiveInteger(value: number, field: string): number {
   return parsed;
 }
 
+export function parseProjectionHorizon(value: number): 7 | 30 {
+  if (value === 7 || value === 30) return value;
+  throw new FinanceDomainError("Horizon days must be 7 or 30.");
+}
+
 export function parseDate(value: string, field = "Date"): Date {
   if (!DATE_REGEXP.test(value)) throw new FinanceDomainError(`${field} must use YYYY-MM-DD.`);
   const date = new Date(`${value}T00:00:00.000Z`);

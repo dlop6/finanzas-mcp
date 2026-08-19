@@ -1,5 +1,6 @@
 import { startFinanceMcpSessionLocal } from "@/host/mcp-clients/finance-mcp-local";
 import { prisma } from "@/database/client";
+import { Prisma } from "@/database/generated/prisma/client";
 
 async function main(): Promise<void> {
   const client = await startFinanceMcpSessionLocal({ onStderr: () => undefined });
@@ -11,7 +12,7 @@ async function main(): Promise<void> {
   try {
     const tools = await client.toolsList();
     const names = tools.tools.map((tool) => tool.name);
-    const expected = ["record_income", "record_expense", "list_transactions", "update_transaction", "delete_transaction", "record_debt", "list_debts", "update_debt", "mark_debt_paid", "delete_debt", "record_receivable", "list_receivables", "update_receivable", "mark_receivable_collected", "delete_receivable", "create_product", "list_products", "update_product", "record_inventory_movement", "list_low_stock_products", "get_current_balance", "get_cash_flow_summary", "project_cash_flow"];
+    const expected = ["record_income", "record_expense", "list_transactions", "update_transaction", "delete_transaction", "record_debt", "list_debts", "update_debt", "mark_debt_paid", "delete_debt", "record_receivable", "list_receivables", "update_receivable", "mark_receivable_collected", "delete_receivable", "create_product", "list_products", "update_product", "record_inventory_movement", "list_low_stock_products", "get_current_balance", "get_cash_flow_summary", "project_cash_flow", "evaluate_purchase_viability"];
     if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error("Unexpected Finance MCP tool registry.");
 
     const income = await client.toolsCall("record_income", { accountId: 1, categoryId: 1, amount: "100.00", date: "2026-08-08", description: "Smoke income" });
@@ -44,6 +45,15 @@ async function main(): Promise<void> {
     const projection = await client.toolsCall("project_cash_flow", { horizonDays: 7 });
     const projected = projection.structuredContent as { currentBalance: string; confirmedReceivables: string; unconfirmedReceivables: string; fixedExpenses: string; pendingDebts: string; safeProjectedBalance: string; potentialProjectedBalance: string };
     if (new Set([projected.currentBalance, projected.confirmedReceivables, projected.unconfirmedReceivables, projected.fixedExpenses, projected.pendingDebts, projected.safeProjectedBalance, projected.potentialProjectedBalance]).size === 0) throw new Error("Projection did not return monetary totals.");
+    const viability = await client.toolsCall("evaluate_purchase_viability", { purchaseAmount: "1.00", horizonDays: 7 });
+    const evaluated = viability.structuredContent as { currency: string; horizonDays: number; purchaseAmount: string; safeProjectedBalance: string; potentialProjectedBalance: string; minimumSafetyBalance: string; safeBalanceAfterPurchase: string; potentialBalanceAfterPurchase: string; maximumSafePurchase: string; status: string };
+    const safe = new Prisma.Decimal(evaluated.safeProjectedBalance);
+    const potential = new Prisma.Decimal(evaluated.potentialProjectedBalance);
+    const purchase = new Prisma.Decimal(evaluated.purchaseAmount);
+    const minimum = new Prisma.Decimal(evaluated.minimumSafetyBalance);
+    const maximum = safe.minus(minimum).lessThan(0) ? new Prisma.Decimal(0) : safe.minus(minimum);
+    const expectedStatus = safe.minus(purchase).greaterThanOrEqualTo(minimum) ? "VIABLE" : potential.minus(purchase).greaterThanOrEqualTo(minimum) ? "VIABLE_WITH_RISK" : "NOT_VIABLE";
+    if (evaluated.currency !== "GTQ" || evaluated.horizonDays !== 7 || evaluated.purchaseAmount !== "1.00" || new Prisma.Decimal(evaluated.safeBalanceAfterPurchase).equals(safe.minus(purchase)) === false || new Prisma.Decimal(evaluated.potentialBalanceAfterPurchase).equals(potential.minus(purchase)) === false || new Prisma.Decimal(evaluated.maximumSafePurchase).equals(maximum) === false || evaluated.status !== expectedStatus) throw new Error("Purchase viability did not reconcile.");
     const product = await client.toolsCall("create_product", { name: `Smoke inventory ${process.pid}`, stock: 2, unitCost: "1.00", salePrice: "2.00", minimumStock: 3 });
     productId = (product.structuredContent as { product: { id: number } }).product.id;
     const entered = await client.toolsCall("record_inventory_movement", { productId, type: "IN", quantity: 3, date: "2026-08-08", note: "Smoke entry" });

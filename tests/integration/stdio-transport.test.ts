@@ -78,6 +78,7 @@ describe("local MCP STDIO transport", () => {
           { name: "create_product" }, { name: "list_products" }, { name: "update_product" }, { name: "record_inventory_movement" }, { name: "list_low_stock_products" },
           { name: "get_current_balance" }, { name: "get_cash_flow_summary" },
           { name: "project_cash_flow" },
+          { name: "evaluate_purchase_viability" },
         ],
       });
     } finally {
