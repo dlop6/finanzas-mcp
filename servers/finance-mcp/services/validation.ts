@@ -12,6 +12,25 @@ export function parseMoney(value: string): Prisma.Decimal {
   return amount;
 }
 
+export function parseNonNegativeMoney(value: string): Prisma.Decimal {
+  if (!MONEY_REGEXP.test(value)) throw new FinanceDomainError("Amount must be a non-negative monetary string.");
+  const amount = new Prisma.Decimal(value);
+  if (amount.lessThan(0)) throw new FinanceDomainError("Amount must be non-negative.");
+  return amount;
+}
+
+export function parseNonNegativeInteger(value: number, field: string): number {
+  if (!Number.isInteger(value)) throw new FinanceDomainError(`${field} must be an integer.`);
+  if (value < 0) throw new FinanceDomainError(`${field} must be non-negative.`);
+  return value;
+}
+
+export function parsePositiveInteger(value: number, field: string): number {
+  const parsed = parseNonNegativeInteger(value, field);
+  if (parsed === 0) throw new FinanceDomainError(`${field} must be greater than zero.`);
+  return parsed;
+}
+
 export function parseDate(value: string, field = "Date"): Date {
   if (!DATE_REGEXP.test(value)) throw new FinanceDomainError(`${field} must use YYYY-MM-DD.`);
   const date = new Date(`${value}T00:00:00.000Z`);

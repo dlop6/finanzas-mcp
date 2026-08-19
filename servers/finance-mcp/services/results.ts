@@ -1,4 +1,4 @@
-import type { Transaction, Currency, Debt, Receivable } from "@/database/generated/prisma/client";
+import type { Transaction, Currency, Debt, Receivable, Product, InventoryMovement } from "@/database/generated/prisma/client";
 import { formatDate, formatMoney } from "./validation";
 
 export type MoneyResult = { currency: "GTQ"; amount: string };
@@ -8,6 +8,8 @@ export type TransactionResult = {
 };
 export type DebtResult = { id: number; description: string; amount: string; dueDate: string; priority: "LOW" | "MEDIUM" | "HIGH"; status: "PENDING" | "PAID" };
 export type ReceivableResult = { id: number; description: string; amount: string; expectedDate: string; confidence: "CONFIRMED" | "UNCONFIRMED"; status: "PENDING" | "COLLECTED" };
+export type ProductResult = { id: number; name: string; stock: number; unitCost: string; salePrice: string; minimumStock: number };
+export type InventoryMovementResult = { id: number; productId: number; type: "IN" | "OUT"; quantity: number; date: string; note: string | null };
 
 export function moneyResult(amount: { toFixed: (digits: number) => string }, currency: Currency): MoneyResult {
   return { currency: currency as "GTQ", amount: amount.toFixed(2) };
@@ -26,3 +28,5 @@ export function debtResult(debt: Debt): DebtResult {
 export function receivableResult(receivable: Receivable): ReceivableResult {
   return { id: receivable.id, description: receivable.description, amount: formatMoney(receivable.amount), expectedDate: formatDate(receivable.expectedDate), confidence: receivable.confidence, status: receivable.status };
 }
+export function productResult(product: Product): ProductResult { return { id: product.id, name: product.name, stock: product.stock, unitCost: formatMoney(product.unitCost), salePrice: formatMoney(product.salePrice), minimumStock: product.minimumStock }; }
+export function inventoryMovementResult(movement: InventoryMovement): InventoryMovementResult { return { id: movement.id, productId: movement.productId, type: movement.type, quantity: movement.quantity, date: formatDate(movement.date), note: movement.note }; }

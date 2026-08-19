@@ -72,8 +72,10 @@ describe("local MCP STDIO transport", () => {
       expect(client.state).toBe("READY");
       await expect(client.toolsList()).resolves.toMatchObject({
         tools: [
-          { name: "record_income" }, { name: "record_expense" }, { name: "list_transactions" },
-          { name: "update_transaction" }, { name: "delete_transaction" },
+          { name: "record_income" }, { name: "record_expense" }, { name: "list_transactions" }, { name: "update_transaction" }, { name: "delete_transaction" },
+          { name: "record_debt" }, { name: "list_debts" }, { name: "update_debt" }, { name: "mark_debt_paid" }, { name: "delete_debt" },
+          { name: "record_receivable" }, { name: "list_receivables" }, { name: "update_receivable" }, { name: "mark_receivable_collected" }, { name: "delete_receivable" },
+          { name: "create_product" }, { name: "list_products" }, { name: "update_product" }, { name: "record_inventory_movement" }, { name: "list_low_stock_products" },
         ],
       });
     } finally {
