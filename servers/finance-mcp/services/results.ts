@@ -10,6 +10,9 @@ export type DebtResult = { id: number; description: string; amount: string; dueD
 export type ReceivableResult = { id: number; description: string; amount: string; expectedDate: string; confidence: "CONFIRMED" | "UNCONFIRMED"; status: "PENDING" | "COLLECTED" };
 export type ProductResult = { id: number; name: string; stock: number; unitCost: string; salePrice: string; minimumStock: number };
 export type InventoryMovementResult = { id: number; productId: number; type: "IN" | "OUT"; quantity: number; date: string; note: string | null };
+export type AccountBalanceResult = { id: number; name: string; type: "CASH" | "BANK"; initialBalance: string; income: string; expenses: string; balance: string };
+export type CurrentBalanceResult = { currency: "GTQ"; currentBalance: string; totalIncome: string; totalExpenses: string; accounts: AccountBalanceResult[] };
+export type CashFlowSummaryResult = { currency: "GTQ"; startDate: string; endDate: string; income: string; expenses: string; netCashFlow: string; transactionCount: number; currentBalance: string };
 
 export function moneyResult(amount: { toFixed: (digits: number) => string }, currency: Currency): MoneyResult {
   return { currency: currency as "GTQ", amount: amount.toFixed(2) };

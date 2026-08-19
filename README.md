@@ -35,7 +35,7 @@ After the MCP lifecycle handshake, the Host uses `tools/list` to discover the Fi
 
 Malformed protocol requests and unknown tools return JSON-RPC errors. Arguments that do not satisfy a valid tool schema return a successful MCP tool result with `isError: true`, so a future LLM can read and correct them. Internal metadata such as `isWriteOperation` is not exposed by `tools/list`.
 
-The production registry provides transaction, debt, receivable, and inventory tools. Inventory includes product creation and listing, product metadata updates, stock movements, and low-stock discovery. Initial stock does not create a synthetic movement; only inventory movement tools adjust stock. All monetary input is a decimal string and output is normalized to two decimal places. Transaction mutations return the changed transaction plus the derived current balance: initial account balances plus income minus expenses. Paying a debt or collecting a receivable changes only its status; neither creates a transaction. Write confirmation remains a Host responsibility and is not performed by Finance MCP.
+The production registry provides transaction, debt, receivable, inventory, current-balance, and cash-flow-summary tools. Inventory includes product creation and listing, product metadata updates, stock movements, and low-stock discovery. Initial stock does not create a synthetic movement; only inventory movement tools adjust stock. Current balance is derived from initial account balances plus real income minus real expenses; debts and receivables do not change it. All monetary input is a decimal string and output is normalized to two decimal places. Write confirmation remains a Host responsibility and is not performed by Finance MCP.
 
 ## Financial persistence
 

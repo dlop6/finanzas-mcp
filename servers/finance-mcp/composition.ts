@@ -1,9 +1,10 @@
 import type { PrismaClient } from "@/database/generated/prisma/client";
 import { createFinanceRepositories } from "./repositories";
-import { CurrentBalanceService, DebtService, InventoryService, ReceivableService, TransactionService } from "./services";
+import { CashFlowService, CurrentBalanceService, DebtService, InventoryService, ReceivableService, TransactionService } from "./services";
 import { createDebtTools } from "./tools/debt-tools";
 import { createReceivableTools } from "./tools/receivable-tools";
 import { createInventoryTools } from "./tools/inventory-tools";
+import { createCashFlowTools } from "./tools/cash-flow-tools";
 import { createTransactionTools } from "./tools/transaction-tools";
 import { FinanceToolRegistry } from "./tools/registry";
 
@@ -14,5 +15,6 @@ export function createFinanceToolRegistry(prisma: PrismaClient): FinanceToolRegi
   const debts = new DebtService(repositories.debts);
   const receivables = new ReceivableService(repositories.receivables);
   const inventory = new InventoryService(repositories.inventory);
-  return new FinanceToolRegistry([...createTransactionTools(transactions), ...createDebtTools(debts), ...createReceivableTools(receivables), ...createInventoryTools(inventory)]);
+  const cashFlow = new CashFlowService(repositories.transactions, balance);
+  return new FinanceToolRegistry([...createTransactionTools(transactions), ...createDebtTools(debts), ...createReceivableTools(receivables), ...createInventoryTools(inventory), ...createCashFlowTools(balance, cashFlow)]);
 }

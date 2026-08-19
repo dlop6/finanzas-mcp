@@ -11,7 +11,7 @@ async function main(): Promise<void> {
   try {
     const tools = await client.toolsList();
     const names = tools.tools.map((tool) => tool.name);
-    const expected = ["record_income", "record_expense", "list_transactions", "update_transaction", "delete_transaction", "record_debt", "list_debts", "update_debt", "mark_debt_paid", "delete_debt", "record_receivable", "list_receivables", "update_receivable", "mark_receivable_collected", "delete_receivable", "create_product", "list_products", "update_product", "record_inventory_movement", "list_low_stock_products"];
+    const expected = ["record_income", "record_expense", "list_transactions", "update_transaction", "delete_transaction", "record_debt", "list_debts", "update_debt", "mark_debt_paid", "delete_debt", "record_receivable", "list_receivables", "update_receivable", "mark_receivable_collected", "delete_receivable", "create_product", "list_products", "update_product", "record_inventory_movement", "list_low_stock_products", "get_current_balance", "get_cash_flow_summary"];
     if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error("Unexpected Finance MCP tool registry.");
 
     const income = await client.toolsCall("record_income", { accountId: 1, categoryId: 1, amount: "100.00", date: "2026-08-08", description: "Smoke income" });
@@ -37,6 +37,10 @@ async function main(): Promise<void> {
     const lowStock = await client.toolsCall("list_low_stock_products");
     const lowStockNames = (lowStock.structuredContent as { products: Array<{ name: string }> }).products.map((product) => product.name);
     if (!lowStockNames.includes("Frijol 1 lb") || !lowStockNames.includes("Leche 1 L")) throw new Error("Expected seed low-stock products.");
+    const balance = await client.toolsCall("get_current_balance");
+    if ((balance.structuredContent as { currentBalance: string }).currentBalance !== "19535.00") throw new Error("Unexpected current balance.");
+    const summary = await client.toolsCall("get_cash_flow_summary", { startDate: "2026-08-01", endDate: "2026-08-08" });
+    if ((summary.structuredContent as { netCashFlow: string; transactionCount: number }).netCashFlow !== "-840.00" || (summary.structuredContent as { transactionCount: number }).transactionCount !== 7) throw new Error("Unexpected cash-flow summary.");
     const product = await client.toolsCall("create_product", { name: `Smoke inventory ${process.pid}`, stock: 2, unitCost: "1.00", salePrice: "2.00", minimumStock: 3 });
     productId = (product.structuredContent as { product: { id: number } }).product.id;
     const entered = await client.toolsCall("record_inventory_movement", { productId, type: "IN", quantity: 3, date: "2026-08-08", note: "Smoke entry" });

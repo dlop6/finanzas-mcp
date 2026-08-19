@@ -1,4 +1,5 @@
 export * from "./current-balance-service";
+export * from "./cash-flow-service";
 export * from "./debt-service";
 export * from "./errors";
 export * from "./inventory-service";
