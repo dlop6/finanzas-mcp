@@ -1,6 +1,6 @@
 import { Prisma } from "@/database/generated/prisma/client";
 import type { BusinessRepository, TransactionRepository } from "@/servers/finance-mcp/repositories";
-import { moneyResult, type CurrentBalanceResult, type MoneyResult } from "./results";
+import { type CurrentBalanceResult, type MoneyResult } from "./results";
 
 export class CurrentBalanceService {
   constructor(private readonly business: BusinessRepository, private readonly transactions: TransactionRepository) {}

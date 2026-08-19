@@ -77,6 +77,7 @@ describe("local MCP STDIO transport", () => {
           { name: "record_receivable" }, { name: "list_receivables" }, { name: "update_receivable" }, { name: "mark_receivable_collected" }, { name: "delete_receivable" },
           { name: "create_product" }, { name: "list_products" }, { name: "update_product" }, { name: "record_inventory_movement" }, { name: "list_low_stock_products" },
           { name: "get_current_balance" }, { name: "get_cash_flow_summary" },
+          { name: "project_cash_flow" },
         ],
       });
     } finally {
