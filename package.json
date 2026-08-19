@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:finance:integration": "tsx tests/integration/finance-mcp/run.ts",
     "test:watch": "vitest",
     "typecheck:app": "tsc --noEmit -p tsconfig.json",
     "typecheck:host": "tsc --noEmit -p host/tsconfig.json",

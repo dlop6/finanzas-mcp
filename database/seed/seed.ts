@@ -1,8 +1,9 @@
 import "dotenv/config";
 
-import { Prisma } from "../generated/prisma/client";
+import { Prisma, type PrismaClient } from "../generated/prisma/client";
 import { AccountType, DebtPriority, DebtStatus, InventoryMovementType, ReceivableConfidence, ReceivableStatus, TransactionType } from "../generated/prisma/enums";
-import { prisma } from "../client";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const CANONICAL_DATE = "2026-08-08";
 const SEEDED_AT = new Date(`${CANONICAL_DATE}T00:00:00.000Z`);
@@ -59,12 +60,12 @@ const products: ProductSeed[] = [
   { name: "Leche 1 L", stock: 4, minimumStock: 6, unitCost: "8.00", salePrice: "11.00", incoming: 12, outgoing: 8 },
 ];
 
-async function main(): Promise<void> {
+export async function seedFinanceDatabase(client: PrismaClient): Promise<void> {
   if (process.env.NODE_ENV === "production") {
     throw new Error("The local financial seed cannot run in production");
   }
 
-  await prisma.$transaction(async (tx) => {
+  await client.$transaction(async (tx) => {
     await tx.$executeRaw`
       TRUNCATE TABLE
         "InventoryMovement",
@@ -240,16 +241,25 @@ async function main(): Promise<void> {
       });
     }
   });
-
-  console.log(`Deterministic financial seed loaded for ${CANONICAL_DATE}.`);
 }
 
-main()
-  .catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : "Seed failed";
-    console.error(message.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[redacted connection]"));
-    process.exitCode = 1;
-  })
-  .finally(async () => {
+async function main(): Promise<void> {
+  const { prisma } = await import("../client");
+  try {
+    await seedFinanceDatabase(prisma);
+    console.log(`Deterministic financial seed loaded for ${CANONICAL_DATE}.`);
+  } finally {
     await prisma.$disconnect();
-  });
+  }
+}
+
+const isEntrypoint = process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+
+if (isEntrypoint) {
+  main()
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "Seed failed";
+      console.error(message.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[redacted connection]"));
+      process.exitCode = 1;
+    });
+}

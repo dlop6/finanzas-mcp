@@ -15,5 +15,22 @@ services:
       timeout: 5s
       retries: 10
 
+  postgres-test:
+    profiles: ["test"]
+    image: postgres:17-alpine
+    ports:
+      - "${TEST_POSTGRES_PORT:-5435}:5432"
+    environment:
+      POSTGRES_DB: ${TEST_POSTGRES_DB:-finanzas_mcp_test}
+      POSTGRES_USER: ${TEST_POSTGRES_USER:-finanzas_mcp_test}
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_PASSWORD:-local_test_only}
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_POSTGRES_USER:-finanzas_mcp_test} -d ${TEST_POSTGRES_DB:-finanzas_mcp_test}"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
 volumes:
   finanzas_mcp_postgres_data:

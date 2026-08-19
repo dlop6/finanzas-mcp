@@ -51,6 +51,8 @@ npm run db:finance-tools:smoke
 
 Open the web app at <http://localhost:3000>. The Finance smoke check starts the real server over STDIO and exercises the MCP tools.
 
+Run `npm run test:finance:integration` for the isolated Finance MCP suite. It uses an ephemeral PostgreSQL container on port `5435`, never changes development data, and removes the container automatically.
+
 ## Database commands
 
 | Command | Purpose |
