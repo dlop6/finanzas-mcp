@@ -1,34 +1,29 @@
 # Finance MCP
 
-University networking project: a Next.js chatbot Host that communicates with a custom Finance MCP through manual MCP/JSON-RPC.
+**Author:** Diego López #23747
 
-## Architecture
+Finance MCP is a local Model Context Protocol server for small-business financial management. It implements MCP `2025-11-25` and JSON-RPC manually, without an MCP SDK.
 
-```text
-Next.js UI → Host → MCP/JSON-RPC over STDIO → Finance MCP → PostgreSQL
-```
-
-The Host never imports Finance MCP tools, services, or repositories. Finance MCP owns financial rules and database access; the future LLM only interprets results.
-
-## Current Finance MCP capabilities
-
-- Transactions, debts, receivables, and basic inventory.
-- Current balance, cash-flow summary, 7/30-day projections, and purchase viability.
-- Deterministic demo data for one GTQ business.
-
-After lifecycle initialization, clients use `tools/list` and `tools/call`. Tool inputs are validated with JSON Schema; invalid tool arguments return `isError: true`. Financial amounts use decimal strings and are returned with two decimal places.
+The server runs as a separate Node.js process, communicates through STDIO, and stores its state in PostgreSQL through Prisma. It provides 24 tools for transactions, debts, receivables, inventory, cash flow, projections, and purchase viability. All financial calculations are performed by Finance MCP.
 
 ## Requirements
 
-- Node.js 24.14 or compatible
+- Node.js 22.12 or later
 - npm
 - Docker Desktop
 
-## Local setup
+## Installation
 
-```bash
+From the project root, install the dependencies and create the local environment file:
+
+```powershell
 npm ci
-copy .env.example .env
+Copy-Item .env.example .env
+```
+
+Start PostgreSQL and prepare the database:
+
+```powershell
 npm run db:up
 npm run db:generate
 npm run db:migrate
@@ -36,33 +31,52 @@ npm run db:seed
 npm run db:verify
 ```
 
-The local PostgreSQL container uses port `5434`. `.env` is local-only; never commit secrets.
+PostgreSQL runs locally on port `5434`. The seed creates the deterministic `Tienda Demo` dataset. Running the seed again replaces the local financial data.
 
-## Run and verify
+## Usage
 
-```bash
-npm run dev
-npm test
-npm run typecheck
-npm run lint
-npm run build
+Start the local Finance MCP server:
+
+```powershell
+node --import tsx servers/finance-mcp/stdio.ts
+```
+
+The process waits for one compact JSON-RPC message per line. Send these messages in order.
+
+Initialize the MCP lifecycle:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"manual-client","version":"1.0.0"}}}
+```
+
+Notify the server that initialization finished:
+
+```json
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+```
+
+Discover the 24 available tools:
+
+```json
+{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+```
+
+Call a read-only tool:
+
+```json
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_current_balance","arguments":{}}}
+```
+
+Each response preserves the request ID. Notifications have no ID and produce no response. Avoid empty input lines because each line is parsed as a JSON-RPC message.
+
+To run an automated check of the local MCP and its tools:
+
+```powershell
 npm run db:finance-tools:smoke
 ```
 
-Open the web app at <http://localhost:3000>. The Finance smoke check starts the real server over STDIO and exercises the MCP tools.
+Stop Finance MCP with `Ctrl+C`. Stop PostgreSQL while preserving its local volume with:
 
-Run `npm run test:finance:integration` for the isolated Finance MCP suite. It uses an ephemeral PostgreSQL container on port `5435`, never changes development data, and removes the container automatically.
-
-## Database commands
-
-| Command | Purpose |
-| --- | --- |
-| `npm run db:check` | Check the local database connection. |
-| `npm run db:migrate:status` | Show migration status. |
-| `npm run db:repositories:smoke` | Run read-only repository checks. |
-| `npm run db:down` | Stop PostgreSQL and preserve its volume. |
-| `npm run db:reset` | Recreate local data and run the seed. **Destructive.** |
-
-The seed creates `Tienda Demo`, 20 transactions, fixed expenses, pending debts and receivables, five products, and inventory movements. The current balance is derived from initial balances plus income minus expenses; it is never stored as a mutable field.
-
-For the full technical specification, architecture decisions, and protocol details, see [`docs/`](docs/).
+```powershell
+npm run db:down
+```
