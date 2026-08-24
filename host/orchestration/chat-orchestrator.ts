@@ -52,6 +52,7 @@ export type OrchestratedChatResult =
     };
 
 export type ChatOrchestrationInput = {
+  sessionId: string;
   systemPrompt: string;
   history: readonly DeepSeekChatMessage[];
   userMessage: string;
@@ -63,6 +64,7 @@ export type ChatOrchestrator = {
 };
 
 export type ConfirmedWriteInput = {
+  sessionId: string;
   systemPrompt: string;
   history: readonly DeepSeekChatMessage[];
   pendingOperation: PendingWriteOperation;
@@ -207,6 +209,7 @@ function validatePendingWrite(
 export function createChatOrchestrator(options: CreateChatOrchestratorOptions): ChatOrchestrator {
   return {
     async run(input) {
+      const sessionId = requireText(input.sessionId, "sessionId");
       const systemPrompt = requireText(input.systemPrompt, "systemPrompt");
       const userMessage = requireText(input.userMessage, "userMessage");
       const history = input.history.map(cloneMessage);
@@ -249,7 +252,7 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
       for (const preparedCall of prepared) {
         let result: McpCallToolResult;
         try {
-          result = await preparedCall.tool.client.toolsCall(preparedCall.tool.definition.name, preparedCall.arguments);
+          result = await preparedCall.tool.client.toolsCall(preparedCall.tool.definition.name, preparedCall.arguments, { sessionId });
         } catch {
           result = safeMcpFailure();
         }
@@ -268,13 +271,14 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
     },
 
     async completeConfirmedWrite(input) {
+      const sessionId = requireText(input.sessionId, "sessionId");
       const systemPrompt = requireText(input.systemPrompt, "systemPrompt");
       const history = input.history.map(cloneMessage);
       const pendingTurnMessages = input.pendingTurnMessages.map(cloneMessage);
       const tool = validatePendingWrite(options.toolRegistry, input.pendingOperation, pendingTurnMessages);
       let toolResult: McpCallToolResult;
       try {
-        toolResult = await tool.client.toolsCall(input.pendingOperation.toolName, structuredClone(input.pendingOperation.arguments));
+        toolResult = await tool.client.toolsCall(input.pendingOperation.toolName, structuredClone(input.pendingOperation.arguments), { sessionId });
       } catch {
         toolResult = safeMcpFailure();
       }

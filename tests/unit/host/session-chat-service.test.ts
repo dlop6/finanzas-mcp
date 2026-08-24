@@ -66,6 +66,7 @@ describe("session chat service", () => {
     await chat.sendMessage(session.sessionId, "What balance did I mention?");
 
     expect(run.mock.calls[1][0]).toEqual({
+      sessionId: "session-a",
       systemPrompt: "System instruction",
       history: [
         { role: "user", content: "Question" },

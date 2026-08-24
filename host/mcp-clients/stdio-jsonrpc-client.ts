@@ -13,6 +13,14 @@ import {
   type JsonRpcParams,
   type JsonRpcRequest,
 } from "@/shared/jsonrpc";
+import {
+  HOST_MCP_LOG_SESSION_ID,
+  sanitizeJsonRpcPayload,
+  systemMcpInteractionLogClock,
+  type McpInteractionLogClock,
+  type McpInteractionLogEntry,
+  type McpInteractionLogWriter,
+} from "./mcp-interaction-log";
 
 export type StdioTransportErrorCode =
   | "INVALID_MESSAGE"
@@ -51,9 +59,20 @@ export interface StdioJsonRpcClientOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
   onStderr?: (text: string) => void;
+  serverId?: string;
+  interactionLogger?: McpInteractionLogWriter;
+  logClock?: McpInteractionLogClock;
 }
 
+export type McpRequestContext = {
+  sessionId: string;
+};
+
 interface PendingRequest {
+  method: string;
+  sessionId: string;
+  payload: string;
+  startedAt: number;
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
 }
@@ -85,6 +104,9 @@ export class StdioJsonRpcClient {
   private readonly idGenerator = new JsonRpcRequestIdGenerator();
   private readonly pending = new Map<JsonRpcId, PendingRequest>();
   private readonly consumeStderr: (text: string) => void;
+  private readonly serverId: string;
+  private readonly interactionLogger: McpInteractionLogWriter | undefined;
+  private readonly logClock: McpInteractionLogClock;
   private child: ChildProcessWithoutNullStreams | undefined;
   private outputReader: Interface | undefined;
   private state: ClientState = "idle";
@@ -92,6 +114,9 @@ export class StdioJsonRpcClient {
 
   constructor(private readonly options: StdioJsonRpcClientOptions) {
     this.consumeStderr = options.onStderr ?? defaultStderrConsumer;
+    this.serverId = options.serverId ?? "finance-mcp";
+    this.interactionLogger = options.interactionLogger;
+    this.logClock = options.logClock ?? systemMcpInteractionLogClock;
   }
 
   async start(): Promise<void> {
@@ -130,7 +155,7 @@ export class StdioJsonRpcClient {
     });
   }
 
-  request<Result>(method: string, params?: JsonRpcParams): Promise<Result> {
+  request<Result>(method: string, params?: JsonRpcParams, context?: McpRequestContext): Promise<Result> {
     const stateError = this.requestStateError();
     if (stateError) {
       return Promise.reject(stateError);
@@ -156,24 +181,38 @@ export class StdioJsonRpcClient {
     }
 
     return new Promise<Result>((resolve, reject) => {
-      this.pending.set(request.id, {
+      const pending: PendingRequest = {
+        method: request.method,
+        sessionId: this.sessionIdFor(context),
+        payload: serialized,
+        startedAt: this.logClock.monotonicNow(),
         resolve: (result) => resolve(result as Result),
         reject,
+      };
+      this.pending.set(request.id, pending);
+      this.appendLog({
+        sessionId: pending.sessionId,
+        direction: "HOST_TO_MCP",
+        messageType: "request",
+        method: request.method,
+        requestId: request.id,
+        payload: serialized,
+        status: "SENT",
       });
 
       void writeLine(this.child!.stdin, serialized).catch(() => {
-        const pending = this.pending.get(request.id);
-        if (!pending) {
+        const currentPending = this.pending.get(request.id);
+        if (!currentPending) {
           return;
         }
 
         this.pending.delete(request.id);
-        pending.reject(new StdioTransportError("WRITE_ERROR", "Could not write JSON-RPC request to Finance MCP"));
+        this.rejectPendingRequest(request.id, currentPending, new StdioTransportError("WRITE_ERROR", "Could not write JSON-RPC request to Finance MCP"), "TRANSPORT_ERROR");
       });
     });
   }
 
-  async notify(method: string, params?: JsonRpcParams): Promise<void> {
+  async notify(method: string, params?: JsonRpcParams, context?: McpRequestContext): Promise<void> {
     const stateError = this.requestStateError();
     if (stateError) {
       throw stateError;
@@ -197,7 +236,24 @@ export class StdioJsonRpcClient {
       throw new StdioTransportError("INVALID_MESSAGE", "JSON-RPC notification could not be serialized");
     }
 
+    const sessionId = this.sessionIdFor(context);
+    this.appendLog({
+      sessionId,
+      direction: "HOST_TO_MCP",
+      messageType: "notification",
+      method: notification.method,
+      payload: serialized,
+      status: "SENT",
+    });
     await writeLine(this.child!.stdin, serialized).catch(() => {
+      this.appendLog({
+        sessionId,
+        direction: "HOST_TO_MCP",
+        messageType: "error",
+        method: notification.method,
+        payload: serialized,
+        status: "TRANSPORT_ERROR",
+      });
       throw new StdioTransportError("WRITE_ERROR", "Could not write JSON-RPC notification to Finance MCP");
     });
   }
@@ -217,7 +273,7 @@ export class StdioJsonRpcClient {
     }
 
     this.state = "closing";
-    this.rejectPending(new StdioTransportError("CLOSED", "JSON-RPC STDIO client was closed"));
+    this.rejectPending(new StdioTransportError("CLOSED", "JSON-RPC STDIO client was closed"), "TRANSPORT_ERROR");
 
     const child = this.child;
     if (!child || child.exitCode !== null) {
@@ -257,29 +313,72 @@ export class StdioJsonRpcClient {
     const parsed = parseJsonRpcMessage(line);
 
     if (!parsed.ok || (!isJsonRpcSuccessResponse(parsed.message) && !isJsonRpcErrorResponse(parsed.message))) {
+      this.appendLog({
+        sessionId: HOST_MCP_LOG_SESSION_ID,
+        direction: "MCP_TO_HOST",
+        messageType: "error",
+        payload: line,
+        status: "PROTOCOL_ERROR",
+      });
       this.failTransport(new StdioTransportError("PROTOCOL_ERROR", "Finance MCP emitted an invalid JSON-RPC response"));
       return;
     }
 
     const response = parsed.message;
     if (response.id === null) {
+      this.appendLog({
+        sessionId: HOST_MCP_LOG_SESSION_ID,
+        direction: "MCP_TO_HOST",
+        messageType: "error",
+        payload: line,
+        status: "PROTOCOL_ERROR",
+      });
       this.failTransport(new StdioTransportError("PROTOCOL_ERROR", "Finance MCP emitted a response without a request ID"));
       return;
     }
 
     const pending = this.pending.get(response.id);
     if (!pending) {
+      this.appendLog({
+        sessionId: HOST_MCP_LOG_SESSION_ID,
+        direction: "MCP_TO_HOST",
+        messageType: "error",
+        requestId: response.id,
+        payload: line,
+        status: "PROTOCOL_ERROR",
+      });
       this.failTransport(new StdioTransportError("PROTOCOL_ERROR", "Finance MCP emitted a response with an unknown ID"));
       return;
     }
 
     this.pending.delete(response.id);
+    const durationMs = this.durationSince(pending.startedAt);
 
     if (isJsonRpcSuccessResponse(response)) {
+      this.appendLog({
+        sessionId: pending.sessionId,
+        direction: "MCP_TO_HOST",
+        messageType: "response",
+        method: pending.method,
+        requestId: response.id,
+        payload: line,
+        status: "SUCCEEDED",
+        durationMs,
+      });
       pending.resolve(response.result);
       return;
     }
 
+    this.appendLog({
+      sessionId: pending.sessionId,
+      direction: "MCP_TO_HOST",
+      messageType: "error",
+      method: pending.method,
+      requestId: response.id,
+      payload: line,
+      status: "REMOTE_ERROR",
+      durationMs,
+    });
     pending.reject(new JsonRpcRemoteError(response.id, response.error.code, response.error.message, response.error.data));
   }
 
@@ -301,7 +400,7 @@ export class StdioJsonRpcClient {
     }
 
     this.state = "failed";
-    this.rejectPending(error);
+    this.rejectPending(error, error.code === "PROTOCOL_ERROR" ? "PROTOCOL_ERROR" : "TRANSPORT_ERROR");
 
     if (this.child && !this.child.killed && this.child.exitCode === null) {
       this.child.stdin.end();
@@ -309,12 +408,52 @@ export class StdioJsonRpcClient {
     }
   }
 
-  private rejectPending(error: Error): void {
-    for (const pending of this.pending.values()) {
-      pending.reject(error);
+  private rejectPending(error: Error, status: "TRANSPORT_ERROR" | "PROTOCOL_ERROR"): void {
+    for (const [requestId, pending] of this.pending.entries()) {
+      this.rejectPendingRequest(requestId, pending, error, status);
     }
 
     this.pending.clear();
+  }
+
+  private rejectPendingRequest(
+    requestId: JsonRpcId,
+    pending: PendingRequest,
+    error: Error,
+    status: "TRANSPORT_ERROR" | "PROTOCOL_ERROR",
+  ): void {
+    this.appendLog({
+      sessionId: pending.sessionId,
+      direction: "HOST_TO_MCP",
+      messageType: "error",
+      method: pending.method,
+      requestId,
+      payload: pending.payload,
+      status,
+      durationMs: this.durationSince(pending.startedAt),
+    });
+    pending.reject(error);
+  }
+
+  private sessionIdFor(context: McpRequestContext | undefined): string {
+    const sessionId = context?.sessionId ?? HOST_MCP_LOG_SESSION_ID;
+    if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+      throw new StdioTransportError("INVALID_MESSAGE", "MCP request context has an invalid session ID");
+    }
+    return sessionId.trim();
+  }
+
+  private durationSince(startedAt: number): number {
+    return Math.max(0, this.logClock.monotonicNow() - startedAt);
+  }
+
+  private appendLog(entry: Omit<McpInteractionLogEntry, "timestamp" | "serverId">): void {
+    this.interactionLogger?.append({
+      ...entry,
+      timestamp: this.logClock.now().toISOString(),
+      serverId: this.serverId,
+      payload: sanitizeJsonRpcPayload(entry.payload),
+    });
   }
 
   private async stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {

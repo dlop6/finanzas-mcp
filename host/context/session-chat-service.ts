@@ -80,6 +80,7 @@ export function createSessionChatService(options: CreateSessionChatServiceOption
 
           options.sessionStore.clearPendingConfirmation(normalizedSessionId);
           const completed = await options.chatOrchestrator.completeConfirmedWrite({
+            sessionId: normalizedSessionId,
             systemPrompt: session.systemPrompt,
             history: session.messages,
             pendingOperation: pending.operation,
@@ -91,6 +92,7 @@ export function createSessionChatService(options: CreateSessionChatServiceOption
 
         const normalizedUserMessage = requireUserMessage(userMessage);
         const result = await options.chatOrchestrator.run({
+          sessionId: normalizedSessionId,
           systemPrompt: session.systemPrompt,
           history: session.messages,
           userMessage: normalizedUserMessage,

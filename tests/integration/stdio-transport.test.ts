@@ -10,6 +10,11 @@ import {
 import { startFinanceMcpLocal } from "@/host/mcp-clients/finance-mcp-local";
 import { startFinanceMcpSessionLocal } from "@/host/mcp-clients/finance-mcp-local";
 import { McpLifecycleClient } from "@/host/mcp-clients/mcp-lifecycle-client";
+import {
+  HOST_MCP_LOG_SESSION_ID,
+  InMemoryMcpInteractionLogStore,
+  INVALID_MCP_PAYLOAD,
+} from "@/host/mcp-clients/mcp-interaction-log";
 import { registerFinanceMcpTools } from "@/host/orchestration/finance-mcp-tools";
 import { HostMcpToolRegistry, type McpToolClient } from "@/host/orchestration/mcp-tool-registry";
 import type { McpTool } from "@/shared/mcp";
@@ -87,7 +92,34 @@ describe("local MCP STDIO transport", () => {
     } finally {
       await client.close();
     }
-  });
+  }, 10_000);
+
+  it("records lifecycle and discovery under the reserved HOST session", async () => {
+    const logs = new InMemoryMcpInteractionLogStore();
+    const client = await startFinanceMcpSessionLocal({
+      onStderr: () => undefined,
+      interactionLogger: logs,
+    });
+
+    try {
+      await client.toolsList();
+      const hostLogs = logs.listBySession(HOST_MCP_LOG_SESSION_ID);
+      expect(hostLogs).toContainEqual(expect.objectContaining({
+        direction: "HOST_TO_MCP", messageType: "request", method: "initialize", status: "SENT", serverId: "finance-mcp",
+      }));
+      expect(hostLogs).toContainEqual(expect.objectContaining({
+        direction: "HOST_TO_MCP", messageType: "notification", method: "notifications/initialized", status: "SENT",
+      }));
+      expect(hostLogs).toContainEqual(expect.objectContaining({
+        direction: "HOST_TO_MCP", messageType: "request", method: "tools/list", status: "SENT",
+      }));
+      expect(hostLogs).toContainEqual(expect.objectContaining({
+        direction: "MCP_TO_HOST", messageType: "response", method: "tools/list", status: "SUCCEEDED",
+      }));
+    } finally {
+      await client.close();
+    }
+  }, 10_000);
 
   it("discovers all Finance MCP tools and converts their public definitions for DeepSeek", async () => {
     const session = await startFinanceMcpSessionLocal({ onStderr: () => undefined });
@@ -178,6 +210,64 @@ describe("local MCP STDIO transport", () => {
     const second = client.request<string>("test/echo", { value: "second", delayMs: 0 });
 
     await expect(Promise.all([first, second])).resolves.toEqual(["first", "second"]);
+  });
+
+  it("records exact correlated JSON-RPC traffic by session", async () => {
+    const logs = new InMemoryMcpInteractionLogStore();
+    const client = new StdioJsonRpcClient({
+      command: process.execPath,
+      args: ["--import", "tsx", fixturePath],
+      cwd: projectRoot,
+      env: process.env,
+      serverId: "fixture-mcp",
+      interactionLogger: logs,
+    });
+    clients.push(client);
+    await client.start();
+
+    await expect(client.request<string>("test/echo", { value: "hello" }, { sessionId: "session-a" })).resolves.toBe("hello");
+    await client.notify("notifications/initialized");
+
+    const sessionLogs = logs.listBySession("session-a");
+    expect(sessionLogs).toHaveLength(2);
+    expect(sessionLogs[0]).toMatchObject({
+      direction: "HOST_TO_MCP", messageType: "request", method: "test/echo", requestId: 1,
+      payload: '{"jsonrpc":"2.0","id":1,"method":"test/echo","params":{"value":"hello"}}', status: "SENT", serverId: "fixture-mcp",
+    });
+    expect(sessionLogs[1]).toMatchObject({
+      direction: "MCP_TO_HOST", messageType: "response", method: "test/echo", requestId: 1,
+      payload: '{"jsonrpc":"2.0","id":1,"result":"hello"}', status: "SUCCEEDED",
+    });
+    expect(sessionLogs[1].durationMs).toBeGreaterThanOrEqual(0);
+    expect(logs.listBySession(HOST_MCP_LOG_SESSION_ID)).toContainEqual(expect.objectContaining({
+      messageType: "notification", method: "notifications/initialized", status: "SENT",
+    }));
+  });
+
+  it("preserves the origin request when malformed stdout fails the protocol", async () => {
+    const logs = new InMemoryMcpInteractionLogStore();
+    const client = new StdioJsonRpcClient({
+      command: process.execPath,
+      args: ["--import", "tsx", fixturePath],
+      cwd: projectRoot,
+      env: process.env,
+      serverId: "fixture-mcp",
+      interactionLogger: logs,
+    });
+    clients.push(client);
+    await client.start();
+
+    await expect(client.request("test/invalid-json", undefined, { sessionId: "session-a" })).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+
+    expect(logs.listBySession("session-a")).toContainEqual(expect.objectContaining({
+      direction: "HOST_TO_MCP", messageType: "request", method: "test/invalid-json", status: "SENT",
+    }));
+    expect(logs.listBySession("session-a")).toContainEqual(expect.objectContaining({
+      direction: "HOST_TO_MCP", messageType: "error", method: "test/invalid-json", status: "PROTOCOL_ERROR",
+    }));
+    expect(logs.listBySession(HOST_MCP_LOG_SESSION_ID)).toContainEqual(expect.objectContaining({
+      direction: "MCP_TO_HOST", messageType: "error", payload: INVALID_MCP_PAYLOAD, status: "PROTOCOL_ERROR",
+    }));
   });
 
   it("keeps server diagnostics out of the JSON-RPC stdout stream", async () => {

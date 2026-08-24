@@ -9,7 +9,12 @@ import {
   type McpInitializeParams,
   type McpListToolsResult,
 } from "@/shared/mcp";
-import { StdioJsonRpcClient, StdioTransportError } from "./stdio-jsonrpc-client";
+import {
+  StdioJsonRpcClient,
+  StdioTransportError,
+  type McpRequestContext,
+} from "./stdio-jsonrpc-client";
+import { HOST_MCP_LOG_SESSION_ID } from "./mcp-interaction-log";
 
 export type McpClientState = "DISCONNECTED" | "INITIALIZING" | "READY" | "CLOSED";
 
@@ -40,13 +45,13 @@ export class McpLifecycleClient {
         capabilities: {},
         clientInfo: HOST_INFO,
       };
-      const result = await this.transport.request<unknown>(MCP_METHODS.INITIALIZE, params);
+      const result = await this.transport.request<unknown>(MCP_METHODS.INITIALIZE, params, { sessionId: HOST_MCP_LOG_SESSION_ID });
 
       if (!isMcpInitializeResult(result)) {
         throw new StdioTransportError("PROTOCOL_ERROR", "Finance MCP returned an invalid initialize result");
       }
 
-      await this.transport.notify(MCP_METHODS.INITIALIZED_NOTIFICATION);
+      await this.transport.notify(MCP_METHODS.INITIALIZED_NOTIFICATION, undefined, { sessionId: HOST_MCP_LOG_SESSION_ID });
       this.currentState = "READY";
     } catch (error) {
       this.currentState = "CLOSED";
@@ -57,13 +62,13 @@ export class McpLifecycleClient {
 
   async toolsList(): Promise<McpListToolsResult> {
     this.assertReady();
-    const result = await this.transport.request<unknown>(MCP_METHODS.TOOLS_LIST);
+    const result = await this.transport.request<unknown>(MCP_METHODS.TOOLS_LIST, undefined, { sessionId: HOST_MCP_LOG_SESSION_ID });
     return this.assertProtocolResult(result, isMcpListToolsResult, "tools/list");
   }
 
-  async toolsCall(name: string, args: Record<string, unknown> = {}): Promise<McpCallToolResult> {
+  async toolsCall(name: string, args: Record<string, unknown> = {}, context?: McpRequestContext): Promise<McpCallToolResult> {
     this.assertReady();
-    const result = await this.transport.request<unknown>(MCP_METHODS.TOOLS_CALL, { name, arguments: args });
+    const result = await this.transport.request<unknown>(MCP_METHODS.TOOLS_CALL, { name, arguments: args }, context);
     return this.assertProtocolResult(result, isMcpCallToolResult, "tools/call");
   }
 

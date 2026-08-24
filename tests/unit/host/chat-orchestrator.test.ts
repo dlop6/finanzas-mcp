@@ -64,6 +64,7 @@ function llm(...responses: DeepSeekChatResult[]): Pick<DeepSeekClient, "sendChat
 }
 
 const input = {
+  sessionId: "session-a",
   systemPrompt: "You are a financial assistant.",
   history: [{ role: "assistant" as const, content: "Previous answer." }],
   userMessage: "What is my balance?",
@@ -87,6 +88,18 @@ describe("chat orchestration", () => {
     expect(deepSeek.sendChat).toHaveBeenCalledOnce();
   });
 
+  it("rejects an empty session ID before calling the model", async () => {
+    const client = toolClient();
+    const registry = await registryWith([readTool], client);
+    const deepSeek = llm(response({ content: "Unused." }));
+
+    await expect(createChatOrchestrator({ deepSeekClient: deepSeek, toolRegistry: registry }).run({
+      ...input,
+      sessionId: "   ",
+    })).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    expect(deepSeek.sendChat).not.toHaveBeenCalled();
+  });
+
   it("executes a read call through its owner and sends its result to one final LLM call", async () => {
     const client = toolClient({ content: [{ type: "text", text: "19475.00" }], structuredContent: { amount: "19475.00" } });
     const registry = await registryWith([readTool], client);
@@ -101,7 +114,7 @@ describe("chat orchestration", () => {
     const result = await createChatOrchestrator({ deepSeekClient: deepSeek, toolRegistry: registry }).run(input);
 
     expect(result).toMatchObject({ status: "completed", response: { content: "Your balance is Q19,475.00." } });
-    expect(client.toolsCall).toHaveBeenCalledWith("read_balance", {});
+    expect(client.toolsCall).toHaveBeenCalledWith("read_balance", {}, { sessionId: "session-a" });
     expect(deepSeek.sendChat).toHaveBeenCalledTimes(2);
     expect(deepSeek.sendChat.mock.calls[1][1]).toBeUndefined();
     expect(deepSeek.sendChat.mock.calls[1][0]).toContainEqual({
@@ -243,6 +256,7 @@ describe("chat orchestration", () => {
     ];
 
     const result = await orchestrator.completeConfirmedWrite({
+      sessionId: "session-a",
       systemPrompt: input.systemPrompt,
       history: input.history,
       pendingOperation: { toolCallId: "write-1", serverId: "test-mcp", toolName: "record_income", arguments: { amount: "10.00" } },
@@ -250,7 +264,7 @@ describe("chat orchestration", () => {
     });
 
     expect(client.toolsCall).toHaveBeenCalledTimes(1);
-    expect(client.toolsCall).toHaveBeenCalledWith("record_income", { amount: "10.00" });
+    expect(client.toolsCall).toHaveBeenCalledWith("record_income", { amount: "10.00" }, { sessionId: "session-a" });
     expect(deepSeek.sendChat).toHaveBeenCalledTimes(1);
     expect(deepSeek.sendChat.mock.calls[0][1]).toBeUndefined();
     expect(result.turnMessages).toContainEqual({
@@ -266,6 +280,7 @@ describe("chat orchestration", () => {
     const orchestrator = createChatOrchestrator({ deepSeekClient: llm(), toolRegistry: registry });
 
     await expect(orchestrator.completeConfirmedWrite({
+      sessionId: "session-a",
       systemPrompt: input.systemPrompt,
       history: [],
       pendingOperation: { toolCallId: "write-1", serverId: "test-mcp", toolName: "record_income", arguments: { amount: "20.00" } },

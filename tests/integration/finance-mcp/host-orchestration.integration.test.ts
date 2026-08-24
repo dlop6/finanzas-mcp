@@ -7,6 +7,7 @@ import { registerFinanceMcpTools } from "@/host/orchestration/finance-mcp-tools"
 import { HostMcpToolRegistry } from "@/host/orchestration/mcp-tool-registry";
 import { McpLifecycleClient } from "@/host/mcp-clients/mcp-lifecycle-client";
 import { StdioJsonRpcClient } from "@/host/mcp-clients/stdio-jsonrpc-client";
+import { HOST_MCP_LOG_SESSION_ID, InMemoryMcpInteractionLogStore } from "@/host/mcp-clients/mcp-interaction-log";
 import { getValidatedTestDatabaseUrl } from "@/database/test/test-database-config";
 import { resetFinanceTestDatabase } from "./fixtures";
 import { createTestPrisma } from "./test-prisma";
@@ -29,12 +30,15 @@ afterAll(async () => {
 
 describe("Host orchestration over Finance MCP STDIO", () => {
   it("runs a read tool through lifecycle and gives its result to the final LLM call", async () => {
+    const logs = new InMemoryMcpInteractionLogStore();
     const transport = new StdioJsonRpcClient({
       command: process.execPath,
       args: ["--import", "tsx", financeServerPath],
       cwd: projectRoot,
       env: { DATABASE_URL: getValidatedTestDatabaseUrl(), NODE_ENV: "test" },
       onStderr: () => undefined,
+      serverId: "finance-mcp",
+      interactionLogger: logs,
     });
     const lifecycle = new McpLifecycleClient(transport);
     await transport.start();
@@ -53,6 +57,7 @@ describe("Host orchestration over Finance MCP STDIO", () => {
         .mockResolvedValueOnce({ content: "The current balance is Q19,475.00.", toolCalls: [], model: "test-model", finishReason: "stop" });
 
       const result = await createChatOrchestrator({ deepSeekClient: { sendChat }, toolRegistry: registry }).run({
+        sessionId: "integration-read-session",
         systemPrompt: "Use financial tools when required.",
         history: [],
         userMessage: "What is my current balance?",
@@ -65,18 +70,29 @@ describe("Host orchestration over Finance MCP STDIO", () => {
         toolCallId: "balance-1",
         content: expect.stringContaining("19475.00"),
       });
+      expect(logs.listBySession("integration-read-session")).toEqual(expect.arrayContaining([
+        expect.objectContaining({ direction: "HOST_TO_MCP", messageType: "request", method: "tools/call", status: "SENT" }),
+        expect.objectContaining({ direction: "MCP_TO_HOST", messageType: "response", method: "tools/call", status: "SUCCEEDED" }),
+      ]));
+      expect(logs.listBySession(HOST_MCP_LOG_SESSION_ID)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ method: "initialize" }),
+        expect.objectContaining({ method: "tools/list" }),
+      ]));
     } finally {
       await lifecycle.close();
     }
   });
 
   it("does not write until a session explicitly confirms the exact pending operation", async () => {
+    const logs = new InMemoryMcpInteractionLogStore();
     const transport = new StdioJsonRpcClient({
       command: process.execPath,
       args: ["--import", "tsx", financeServerPath],
       cwd: projectRoot,
       env: { DATABASE_URL: getValidatedTestDatabaseUrl(), NODE_ENV: "test" },
       onStderr: () => undefined,
+      serverId: "finance-mcp",
+      interactionLogger: logs,
     });
     const lifecycle = new McpLifecycleClient(transport);
     await transport.start();
@@ -111,11 +127,13 @@ describe("Host orchestration over Finance MCP STDIO", () => {
         status: "confirmation_required",
       });
       expect(await prisma.transaction.count()).toBe(transactionCount);
+      expect(logs.listBySession("confirmation-session")).toEqual([]);
 
       await expect(chat.sendMessage(session.sessionId, "ok")).resolves.toMatchObject({
         status: "confirmation_required",
       });
       expect(await prisma.transaction.count()).toBe(transactionCount);
+      expect(logs.listBySession("confirmation-session")).toEqual([]);
 
       await expect(chat.sendMessage(session.sessionId, "sí")).resolves.toMatchObject({
         status: "completed",
@@ -132,6 +150,10 @@ describe("Host orchestration over Finance MCP STDIO", () => {
         date: new Date("2026-08-08T00:00:00.000Z"),
       });
       expect(sendChat).toHaveBeenCalledTimes(2);
+      expect(logs.listBySession("confirmation-session")).toEqual(expect.arrayContaining([
+        expect.objectContaining({ direction: "HOST_TO_MCP", messageType: "request", method: "tools/call", status: "SENT" }),
+        expect.objectContaining({ direction: "MCP_TO_HOST", messageType: "response", method: "tools/call", status: "SUCCEEDED" }),
+      ]));
     } finally {
       await lifecycle.close();
     }

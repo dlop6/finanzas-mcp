@@ -2,6 +2,7 @@ import "dotenv/config";
 
 import { DeepSeekClientError, createDeepSeekClient } from "@/host/llm";
 import { startFinanceMcpSessionLocal } from "@/host/mcp-clients/finance-mcp-local";
+import { HOST_MCP_LOG_SESSION_ID } from "@/host/mcp-clients/mcp-interaction-log";
 import { registerFinanceMcpTools } from "./finance-mcp-tools";
 import { ChatOrchestrationError, createChatOrchestrator } from "./chat-orchestrator";
 import { HostMcpToolRegistry } from "./mcp-tool-registry";
@@ -16,6 +17,7 @@ async function main(): Promise<void> {
       deepSeekClient: createDeepSeekClient(),
       toolRegistry,
     }).run({
+      sessionId: HOST_MCP_LOG_SESSION_ID,
       systemPrompt: "You are a financial assistant. Use only get_current_balance to answer the user's question.",
       history: [],
       userMessage: "What is my current balance?",
