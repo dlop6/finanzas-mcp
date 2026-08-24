@@ -1,9 +1,4 @@
-export type DeepSeekChatRole = "system" | "user" | "assistant";
-
-export type DeepSeekChatMessage = {
-  role: DeepSeekChatRole;
-  content: string;
-};
+export type DeepSeekChatRole = "system" | "user" | "assistant" | "tool";
 
 export type DeepSeekToolDefinition = {
   type: "function";
@@ -22,6 +17,22 @@ export type DeepSeekToolCall = {
     arguments: string;
   };
 };
+
+export type DeepSeekChatMessage =
+  | {
+      role: "system" | "user";
+      content: string;
+    }
+  | {
+      role: "assistant";
+      content: string | null;
+      toolCalls?: readonly DeepSeekToolCall[];
+    }
+  | {
+      role: "tool";
+      toolCallId: string;
+      content: string;
+    };
 
 export type DeepSeekUsage = {
   promptTokens: number;
@@ -114,19 +125,64 @@ export type DeepSeekClient = {
   ): Promise<DeepSeekChatResult>;
 };
 
+function isNonEmptyText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isValidToolCall(value: unknown): value is DeepSeekToolCall {
+  if (!isRecord(value) || value.type !== "function" || !isNonEmptyText(value.id) || !isRecord(value.function)) {
+    return false;
+  }
+
+  return isNonEmptyText(value.function.name) && typeof value.function.arguments === "string";
+}
+
 function validateMessages(messages: readonly DeepSeekChatMessage[]): void {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new DeepSeekClientError("INVALID_RESPONSE", "At least one chat message is required.");
   }
 
   for (const message of messages) {
-    if (!message || !["system", "user", "assistant"].includes(message.role)) {
+    if (!message || !["system", "user", "assistant", "tool"].includes(message.role)) {
       throw new DeepSeekClientError("INVALID_RESPONSE", "Chat messages have an invalid role.");
     }
-    if (typeof message.content !== "string" || message.content.trim().length === 0) {
+
+    if (message.role === "tool") {
+      if (!isNonEmptyText(message.toolCallId) || !isNonEmptyText(message.content)) {
+        throw new DeepSeekClientError("INVALID_RESPONSE", "Tool messages must contain a call ID and text.");
+      }
+      continue;
+    }
+
+    if (message.role === "assistant") {
+      const hasContent = isNonEmptyText(message.content);
+      const hasToolCalls = message.toolCalls !== undefined && message.toolCalls.length > 0;
+      if ((!hasContent && !hasToolCalls) || (message.toolCalls !== undefined && !message.toolCalls.every(isValidToolCall))) {
+        throw new DeepSeekClientError("INVALID_RESPONSE", "Assistant messages must contain text or valid tool calls.");
+      }
+      continue;
+    }
+
+    if (!isNonEmptyText(message.content)) {
       throw new DeepSeekClientError("INVALID_RESPONSE", "Chat messages must contain text.");
     }
   }
+}
+
+function serializeMessage(message: DeepSeekChatMessage): Record<string, unknown> {
+  if (message.role === "tool") {
+    return { role: "tool", tool_call_id: message.toolCallId, content: message.content };
+  }
+
+  if (message.role === "assistant") {
+    return {
+      role: "assistant",
+      content: message.content,
+      ...(message.toolCalls?.length ? { tool_calls: structuredClone(message.toolCalls) } : {}),
+    };
+  }
+
+  return { role: message.role, content: message.content };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -258,13 +314,13 @@ export function createDeepSeekClient(options: DeepSeekClientOptions = {}): DeepS
       try {
         const requestBody: {
           model: string;
-          messages: readonly DeepSeekChatMessage[];
+          messages: Record<string, unknown>[];
           stream: false;
           thinking: { type: "disabled" };
           tools?: readonly DeepSeekToolDefinition[];
         } = {
           model: config.model,
-          messages,
+          messages: messages.map(serializeMessage),
           stream: false,
           thinking: { type: "disabled" },
         };

@@ -170,6 +170,38 @@ describe("DeepSeek client", () => {
     });
   });
 
+  it("serializes assistant tool calls and tool results using the provider wire format", async () => {
+    const fetchMock = vi.fn(async (...args: Parameters<DeepSeekFetch>) => {
+      void args;
+      return jsonResponse(validResponse());
+    });
+    const client = createDeepSeekClient({ config, fetchImpl: fetchMock });
+    const messages = [
+      { role: "user" as const, content: "What is my balance?" },
+      {
+        role: "assistant" as const,
+        content: null,
+        toolCalls: [{ id: "call-1", type: "function" as const, function: { name: "read_balance", arguments: "{}" } }],
+      },
+      { role: "tool" as const, toolCallId: "call-1", content: '{"amount":"19475.00"}' },
+    ];
+
+    await client.sendChat(messages);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      messages: [
+        { role: "user", content: "What is my balance?" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [{ id: "call-1", type: "function", function: { name: "read_balance", arguments: "{}" } }],
+        },
+        { role: "tool", tool_call_id: "call-1", content: '{"amount":"19475.00"}' },
+      ],
+    });
+  });
+
   it.each([400, 401, 402, 429, 500, 503])(
     "maps HTTP %s errors without exposing the key or response body",
     async (status) => {

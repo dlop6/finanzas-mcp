@@ -1,12 +1,16 @@
 import type {
-  DeepSeekChatMessage,
   DeepSeekChatResult,
   DeepSeekClient,
 } from "./deepseek-client";
 
+type GeneralChatHistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export type GeneralChatInput = {
   systemPrompt: string;
-  history: ReadonlyArray<Pick<DeepSeekChatMessage, "role" | "content">>;
+  history: ReadonlyArray<GeneralChatHistoryMessage>;
   userMessage: string;
 };
 
@@ -24,7 +28,7 @@ export async function sendGeneralChat(
   requireText(input.systemPrompt, "systemPrompt");
   requireText(input.userMessage, "userMessage");
 
-  const history: DeepSeekChatMessage[] = input.history.map((message) => {
+  const history: GeneralChatHistoryMessage[] = input.history.map((message) => {
     if (message.role !== "user" && message.role !== "assistant") {
       throw new Error("history contains an invalid role.");
     }
