@@ -16,11 +16,18 @@ function completedTurn(answer: string): OrchestratedChatResult {
   };
 }
 
-function serviceWith(orchestrator: ChatOrchestrator) {
+function serviceWith(
+  orchestrator: Pick<ChatOrchestrator, "run"> & Partial<Pick<ChatOrchestrator, "completeConfirmedWrite">>,
+) {
   const ids = ["session-a", "session-b"];
   return createSessionChatService({
     sessionStore: new InMemoryConversationSessionStore({ idGenerator: () => ids.shift()! }),
-    chatOrchestrator: orchestrator,
+    chatOrchestrator: {
+      run: orchestrator.run,
+      completeConfirmedWrite: orchestrator.completeConfirmedWrite ?? (async () => {
+        throw new Error("Unexpected confirmed write.");
+      }),
+    },
   });
 }
 
@@ -68,7 +75,7 @@ describe("session chat service", () => {
     });
   });
 
-  it("stores complete read tool turns but does not persist a pending write", async () => {
+  it("stores complete read tool turns and keeps a write pending outside the history", async () => {
     const run = vi.fn<ChatOrchestrator["run"]>()
       .mockResolvedValueOnce({
         status: "completed",
@@ -82,10 +89,15 @@ describe("session chat service", () => {
       } satisfies OrchestratedChatResult)
       .mockResolvedValueOnce({
         status: "confirmation_required",
-        pendingOperation: { toolCallId: "write-1", serverId: "finance-mcp", toolName: "record_income", arguments: { amount: "10.00" } },
+        pendingOperation: {
+          toolCallId: "write-1",
+          serverId: "finance-mcp",
+          toolName: "record_income",
+          arguments: { accountId: 1, categoryId: 2, amount: "10.00", date: "2026-08-24" },
+        },
         turnMessages: [
           { role: "user", content: "Question" },
-          { role: "assistant", content: null, toolCalls: [{ id: "write-1", type: "function", function: { name: "record_income", arguments: '{"amount":"10.00"}' } }] },
+          { role: "assistant", content: null, toolCalls: [{ id: "write-1", type: "function", function: { name: "record_income", arguments: '{"accountId":1,"categoryId":2,"amount":"10.00","date":"2026-08-24"}' } }] },
         ],
       } satisfies OrchestratedChatResult);
     const chat = serviceWith({ run });
@@ -97,6 +109,12 @@ describe("session chat service", () => {
 
     expect(pending.status).toBe("confirmation_required");
     expect(chat.getSession(session.sessionId).messages).toEqual(beforePending.messages);
+    expect(chat.getSession(session.sessionId).pendingOperation).toMatchObject({
+      toolCallId: "write-1",
+      serverId: "finance-mcp",
+      toolName: "record_income",
+      arguments: { accountId: 1, categoryId: 2, amount: "10.00", date: "2026-08-24" },
+    });
   });
 
   it("keeps sessions isolated and leaves history unchanged if orchestration fails", async () => {
@@ -134,5 +152,74 @@ describe("session chat service", () => {
     resolveFirst?.(completedTurn("First done"));
     await first;
     await expect(chat.sendMessage(session.sessionId, "Second")).resolves.toMatchObject({ status: "completed" });
+  });
+
+  it("confirms one stored write once and keeps control input out of the history", async () => {
+    const run = vi.fn<ChatOrchestrator["run"]>().mockResolvedValue({
+      status: "confirmation_required",
+      pendingOperation: {
+        toolCallId: "write-1",
+        serverId: "finance-mcp",
+        toolName: "record_income",
+        arguments: { accountId: 1, categoryId: 2, amount: "10.00", date: "2026-08-24" },
+      },
+      turnMessages: [
+        { role: "user", content: "Record income." },
+        { role: "assistant", content: null, toolCalls: [{ id: "write-1", type: "function", function: { name: "record_income", arguments: '{"accountId":1,"categoryId":2,"amount":"10.00","date":"2026-08-24"}' } }] },
+      ],
+    });
+    const completeConfirmedWrite = vi.fn<ChatOrchestrator["completeConfirmedWrite"]>().mockResolvedValue({
+      status: "completed",
+      response: { content: "Income recorded.", toolCalls: [], model: "test", finishReason: "stop" },
+      turnMessages: [
+        { role: "user", content: "Record income." },
+        { role: "assistant", content: null, toolCalls: [{ id: "write-1", type: "function", function: { name: "record_income", arguments: '{"accountId":1,"categoryId":2,"amount":"10.00","date":"2026-08-24"}' } }] },
+        { role: "tool", toolCallId: "write-1", content: '{"content":[]}' },
+        { role: "assistant", content: "Income recorded." },
+      ],
+    });
+    const chat = serviceWith({ run, completeConfirmedWrite });
+    const session = chat.createSession({ systemPrompt: "System" });
+
+    const requested = await chat.sendMessage(session.sessionId, "Record income.");
+    const reminder = await chat.sendMessage(session.sessionId, "ok");
+    const confirmed = await chat.sendMessage(session.sessionId, "  SÍ ");
+
+    expect(requested).toMatchObject({ status: "confirmation_required", message: expect.stringContaining("¿Confirmas esta operación?") });
+    expect(reminder).toMatchObject({ status: "confirmation_required", message: "La operación sigue pendiente. Responde \"sí\" para confirmar o \"no\" para cancelar." });
+    expect(confirmed).toMatchObject({ status: "completed", response: { content: "Income recorded." } });
+    expect(completeConfirmedWrite).toHaveBeenCalledOnce();
+    expect(completeConfirmedWrite.mock.calls[0][0].pendingOperation.arguments).toEqual({ accountId: 1, categoryId: 2, amount: "10.00", date: "2026-08-24" });
+    expect(chat.getSession(session.sessionId)).toMatchObject({ pendingOperation: null });
+    expect(chat.getSession(session.sessionId).messages).not.toContainEqual({ role: "user", content: "ok" });
+    expect(chat.getSession(session.sessionId).messages).not.toContainEqual({ role: "user", content: "SÍ" });
+  });
+
+  it("cancels a pending write without completing it", async () => {
+    const run = vi.fn<ChatOrchestrator["run"]>().mockResolvedValue({
+      status: "confirmation_required",
+      pendingOperation: {
+        toolCallId: "write-1",
+        serverId: "finance-mcp",
+        toolName: "delete_transaction",
+        arguments: { transactionId: 10 },
+      },
+      turnMessages: [
+        { role: "user", content: "Delete it." },
+        { role: "assistant", content: null, toolCalls: [{ id: "write-1", type: "function", function: { name: "delete_transaction", arguments: '{"transactionId":10}' } }] },
+      ],
+    });
+    const completeConfirmedWrite = vi.fn<ChatOrchestrator["completeConfirmedWrite"]>();
+    const chat = serviceWith({ run, completeConfirmedWrite });
+    const session = chat.createSession({ systemPrompt: "System" });
+
+    await chat.sendMessage(session.sessionId, "Delete it.");
+    await expect(chat.sendMessage(session.sessionId, "cancelar")).resolves.toEqual({
+      status: "cancelled",
+      message: "Operación cancelada.",
+    });
+
+    expect(completeConfirmedWrite).not.toHaveBeenCalled();
+    expect(chat.getSession(session.sessionId)).toMatchObject({ messages: [], pendingOperation: null });
   });
 });

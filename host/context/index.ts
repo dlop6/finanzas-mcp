@@ -8,10 +8,13 @@ export type {
   ConversationSessionStore,
   CreateSessionInput,
   InMemoryConversationSessionStoreOptions,
+  PendingWriteConfirmation,
+  PendingWriteConfirmationSnapshot,
   SessionId,
 } from "./conversation-session-store";
 export { createSessionChatService } from "./session-chat-service";
 export type {
   CreateSessionChatServiceOptions,
   SessionChatService,
+  SessionChatResult,
 } from "./session-chat-service";

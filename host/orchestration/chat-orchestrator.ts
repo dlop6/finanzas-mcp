@@ -18,7 +18,9 @@ export type ChatOrchestrationErrorCode =
   | "UNKNOWN_TOOL"
   | "UNSUPPORTED_WRITE_BATCH"
   | "TOOL_ROUND_LIMIT"
-  | "INVALID_MODEL_RESPONSE";
+  | "INVALID_MODEL_RESPONSE"
+  | "PENDING_OPERATION_MISMATCH"
+  | "CONFIRMED_WRITE_RESPONSE_FAILED";
 
 export class ChatOrchestrationError extends Error {
   constructor(
@@ -57,6 +59,14 @@ export type ChatOrchestrationInput = {
 
 export type ChatOrchestrator = {
   run(input: ChatOrchestrationInput): Promise<OrchestratedChatResult>;
+  completeConfirmedWrite(input: ConfirmedWriteInput): Promise<Extract<OrchestratedChatResult, { status: "completed" }>>;
+};
+
+export type ConfirmedWriteInput = {
+  systemPrompt: string;
+  history: readonly DeepSeekChatMessage[];
+  pendingOperation: PendingWriteOperation;
+  pendingTurnMessages: readonly DeepSeekChatMessage[];
 };
 
 export type CreateChatOrchestratorOptions = {
@@ -151,6 +161,49 @@ function serializeToolResult(result: McpCallToolResult): string {
   return JSON.stringify(result);
 }
 
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function validatePendingWrite(
+  toolRegistry: HostMcpToolRegistry,
+  pendingOperation: PendingWriteOperation,
+  pendingTurnMessages: readonly DeepSeekChatMessage[],
+): RegisteredMcpTool {
+  const assistant = pendingTurnMessages.at(-1);
+  if (!assistant || assistant.role !== "assistant" || !assistant.toolCalls || assistant.toolCalls.length !== 1) {
+    throw new ChatOrchestrationError("PENDING_OPERATION_MISMATCH", "The pending write operation is invalid.");
+  }
+
+  const call = assistant.toolCalls[0];
+  let parsedArguments: Record<string, unknown>;
+  try {
+    parsedArguments = parseToolArguments(call.function.arguments);
+  } catch {
+    throw new ChatOrchestrationError("PENDING_OPERATION_MISMATCH", "The pending write operation is invalid.");
+  }
+
+  if (
+    call.id !== pendingOperation.toolCallId ||
+    call.function.name !== pendingOperation.toolName ||
+    !sameJsonValue(parsedArguments, pendingOperation.arguments)
+  ) {
+    throw new ChatOrchestrationError("PENDING_OPERATION_MISMATCH", "The pending write operation is invalid.");
+  }
+
+  let tool: RegisteredMcpTool;
+  try {
+    tool = toolRegistry.resolve(pendingOperation.toolName);
+  } catch {
+    throw new ChatOrchestrationError("PENDING_OPERATION_MISMATCH", "The pending write operation is invalid.");
+  }
+  if (!tool.isWriteOperation || tool.serverId !== pendingOperation.serverId) {
+    throw new ChatOrchestrationError("PENDING_OPERATION_MISMATCH", "The pending write operation is invalid.");
+  }
+
+  return tool;
+}
+
 export function createChatOrchestrator(options: CreateChatOrchestratorOptions): ChatOrchestrator {
   return {
     async run(input) {
@@ -212,6 +265,42 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
       turnMessages.push(...toolMessages, assistantMessage(finalResponse));
 
       return { status: "completed", response: finalResponse, turnMessages: structuredClone(turnMessages) };
+    },
+
+    async completeConfirmedWrite(input) {
+      const systemPrompt = requireText(input.systemPrompt, "systemPrompt");
+      const history = input.history.map(cloneMessage);
+      const pendingTurnMessages = input.pendingTurnMessages.map(cloneMessage);
+      const tool = validatePendingWrite(options.toolRegistry, input.pendingOperation, pendingTurnMessages);
+      let toolResult: McpCallToolResult;
+      try {
+        toolResult = await tool.client.toolsCall(input.pendingOperation.toolName, structuredClone(input.pendingOperation.arguments));
+      } catch {
+        toolResult = safeMcpFailure();
+      }
+
+      const toolMessage: DeepSeekChatMessage = {
+        role: "tool",
+        toolCallId: input.pendingOperation.toolCallId,
+        content: serializeToolResult(toolResult),
+      };
+      let finalResponse: DeepSeekChatResult;
+      try {
+        finalResponse = await options.deepSeekClient.sendChat([
+          { role: "system", content: systemPrompt },
+          ...history,
+          ...pendingTurnMessages,
+          toolMessage,
+        ]);
+      } catch {
+        throw new ChatOrchestrationError("CONFIRMED_WRITE_RESPONSE_FAILED", "The confirmed write was processed but no final response was generated.");
+      }
+      ensureFinalContent(finalResponse);
+      return {
+        status: "completed",
+        response: finalResponse,
+        turnMessages: structuredClone([...pendingTurnMessages, toolMessage, assistantMessage(finalResponse)]),
+      };
     },
   };
 }

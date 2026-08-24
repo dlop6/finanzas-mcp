@@ -1,22 +1,37 @@
 import type { ChatOrchestrator, OrchestratedChatResult } from "@/host/orchestration/chat-orchestrator";
 import {
+  cancelledMessage,
+  classifyConfirmationInput,
+  confirmationReminderMessage,
+  confirmationRequiredMessage,
+  FinanceWriteOperationDescriber,
+  type WriteOperationDescriber,
+} from "@/host/confirmation";
+import {
   ConversationSessionError,
   type ConversationSessionSnapshot,
   type ConversationSessionStore,
   type CreateSessionInput,
+  type PendingWriteConfirmationSnapshot,
   type SessionId,
 } from "./conversation-session-store";
+
+export type SessionChatResult =
+  | Extract<OrchestratedChatResult, { status: "completed" }>
+  | { status: "confirmation_required"; pendingOperation: PendingWriteConfirmationSnapshot; message: string }
+  | { status: "cancelled"; message: string };
 
 export type SessionChatService = {
   createSession(input: CreateSessionInput): ConversationSessionSnapshot;
   getSession(sessionId: SessionId): ConversationSessionSnapshot;
-  sendMessage(sessionId: SessionId, userMessage: string): Promise<OrchestratedChatResult>;
+  sendMessage(sessionId: SessionId, userMessage: string): Promise<SessionChatResult>;
   closeSession(sessionId: SessionId): void;
 };
 
 export type CreateSessionChatServiceOptions = {
   sessionStore: ConversationSessionStore;
   chatOrchestrator: ChatOrchestrator;
+  writeOperationDescriber?: WriteOperationDescriber;
 };
 
 function requireUserMessage(value: unknown): string {
@@ -28,6 +43,7 @@ function requireUserMessage(value: unknown): string {
 
 export function createSessionChatService(options: CreateSessionChatServiceOptions): SessionChatService {
   const busySessionIds = new Set<SessionId>();
+  const writeOperationDescriber = options.writeOperationDescriber ?? new FinanceWriteOperationDescriber();
 
   return {
     createSession(input) {
@@ -41,23 +57,60 @@ export function createSessionChatService(options: CreateSessionChatServiceOption
     async sendMessage(sessionId, userMessage) {
       const session = options.sessionStore.get(sessionId);
       const normalizedSessionId = session.sessionId;
-      const normalizedUserMessage = requireUserMessage(userMessage);
       if (busySessionIds.has(normalizedSessionId)) {
         throw new ConversationSessionError("SESSION_BUSY", "The conversation session is processing another message.");
       }
 
       busySessionIds.add(normalizedSessionId);
       try {
+        const pending = options.sessionStore.getPendingConfirmation(normalizedSessionId);
+        if (pending) {
+          const decision = classifyConfirmationInput(userMessage);
+          if (decision === "cancel") {
+            options.sessionStore.clearPendingConfirmation(normalizedSessionId);
+            return { status: "cancelled", message: cancelledMessage() };
+          }
+          if (decision === "other") {
+            return {
+              status: "confirmation_required",
+              pendingOperation: options.sessionStore.get(normalizedSessionId).pendingOperation!,
+              message: confirmationReminderMessage(),
+            };
+          }
+
+          options.sessionStore.clearPendingConfirmation(normalizedSessionId);
+          const completed = await options.chatOrchestrator.completeConfirmedWrite({
+            systemPrompt: session.systemPrompt,
+            history: session.messages,
+            pendingOperation: pending.operation,
+            pendingTurnMessages: pending.turnMessages,
+          });
+          options.sessionStore.appendCompletedTurn(normalizedSessionId, completed.turnMessages);
+          return structuredClone(completed);
+        }
+
+        const normalizedUserMessage = requireUserMessage(userMessage);
         const result = await options.chatOrchestrator.run({
           systemPrompt: session.systemPrompt,
           history: session.messages,
           userMessage: normalizedUserMessage,
         });
 
-        if (result.status === "completed") {
-          options.sessionStore.appendCompletedTurn(normalizedSessionId, result.turnMessages);
+        if (result.status === "confirmation_required") {
+          const description = writeOperationDescriber.describe(result.pendingOperation);
+          const snapshot = options.sessionStore.setPendingConfirmation(normalizedSessionId, {
+            operation: result.pendingOperation,
+            description,
+            turnMessages: result.turnMessages,
+          });
+          return {
+            status: "confirmation_required",
+            pendingOperation: snapshot.pendingOperation!,
+            message: confirmationRequiredMessage(description),
+          };
         }
 
+        options.sessionStore.appendCompletedTurn(normalizedSessionId, result.turnMessages);
         return structuredClone(result);
       } finally {
         busySessionIds.delete(normalizedSessionId);

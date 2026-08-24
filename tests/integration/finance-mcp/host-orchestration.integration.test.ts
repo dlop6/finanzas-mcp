@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolve } from "node:path";
 import { createChatOrchestrator } from "@/host/orchestration/chat-orchestrator";
+import { createSessionChatService } from "@/host/context/session-chat-service";
+import { InMemoryConversationSessionStore } from "@/host/context/conversation-session-store";
 import { registerFinanceMcpTools } from "@/host/orchestration/finance-mcp-tools";
 import { HostMcpToolRegistry } from "@/host/orchestration/mcp-tool-registry";
 import { McpLifecycleClient } from "@/host/mcp-clients/mcp-lifecycle-client";
@@ -63,6 +65,73 @@ describe("Host orchestration over Finance MCP STDIO", () => {
         toolCallId: "balance-1",
         content: expect.stringContaining("19475.00"),
       });
+    } finally {
+      await lifecycle.close();
+    }
+  });
+
+  it("does not write until a session explicitly confirms the exact pending operation", async () => {
+    const transport = new StdioJsonRpcClient({
+      command: process.execPath,
+      args: ["--import", "tsx", financeServerPath],
+      cwd: projectRoot,
+      env: { DATABASE_URL: getValidatedTestDatabaseUrl(), NODE_ENV: "test" },
+      onStderr: () => undefined,
+    });
+    const lifecycle = new McpLifecycleClient(transport);
+    await transport.start();
+    await lifecycle.initialize();
+
+    try {
+      const registry = new HostMcpToolRegistry();
+      await registerFinanceMcpTools(registry, lifecycle);
+      const transactionCount = await prisma.transaction.count();
+      const sendChat = vi.fn()
+        .mockResolvedValueOnce({
+          content: null,
+          toolCalls: [{
+            id: "income-1",
+            type: "function",
+            function: {
+              name: "record_income",
+              arguments: '{"accountId":1,"categoryId":1,"amount":"10.00","date":"2026-08-08","description":"Integration confirmation"}',
+            },
+          }],
+          model: "test-model",
+          finishReason: "tool_calls",
+        })
+        .mockResolvedValueOnce({ content: "Income recorded.", toolCalls: [], model: "test-model", finishReason: "stop" });
+      const chat = createSessionChatService({
+        sessionStore: new InMemoryConversationSessionStore({ idGenerator: () => "confirmation-session" }),
+        chatOrchestrator: createChatOrchestrator({ deepSeekClient: { sendChat }, toolRegistry: registry }),
+      });
+      const session = chat.createSession({ systemPrompt: "Use financial tools when required." });
+
+      await expect(chat.sendMessage(session.sessionId, "Record Q10.00 of income.")).resolves.toMatchObject({
+        status: "confirmation_required",
+      });
+      expect(await prisma.transaction.count()).toBe(transactionCount);
+
+      await expect(chat.sendMessage(session.sessionId, "ok")).resolves.toMatchObject({
+        status: "confirmation_required",
+      });
+      expect(await prisma.transaction.count()).toBe(transactionCount);
+
+      await expect(chat.sendMessage(session.sessionId, "sí")).resolves.toMatchObject({
+        status: "completed",
+        response: { content: "Income recorded." },
+      });
+      expect(await prisma.transaction.count()).toBe(transactionCount + 1);
+      await expect(prisma.transaction.findFirst({
+        where: { description: "Integration confirmation" },
+        select: { accountId: true, categoryId: true, amount: true, date: true },
+      })).resolves.toMatchObject({
+        accountId: 1,
+        categoryId: 1,
+        amount: expect.objectContaining({}),
+        date: new Date("2026-08-08T00:00:00.000Z"),
+      });
+      expect(sendChat).toHaveBeenCalledTimes(2);
     } finally {
       await lifecycle.close();
     }

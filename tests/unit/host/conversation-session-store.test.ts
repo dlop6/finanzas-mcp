@@ -24,6 +24,7 @@ describe("in-memory conversation session store", () => {
       sessionId: "session-a",
       systemPrompt: "You are a financial assistant.",
       messages: [],
+      pendingOperation: null,
     });
 
     created.messages.push({ role: "user", content: "mutated outside" });
@@ -82,5 +83,36 @@ describe("in-memory conversation session store", () => {
     store.close("session-a");
     expectError(() => store.get("session-a"), "SESSION_NOT_FOUND");
     expectError(() => store.close("session-a"), "SESSION_NOT_FOUND");
+  });
+
+  it("stores one defensive pending confirmation outside the completed history", () => {
+    const store = new InMemoryConversationSessionStore({ idGenerator: () => "session-a" });
+    store.create("System");
+    const pending = {
+      operation: {
+        toolCallId: "write-1",
+        serverId: "finance-mcp",
+        toolName: "record_income",
+        arguments: { accountId: 1, categoryId: 2, amount: "10.00", date: "2026-08-24" },
+      },
+      description: "Registrar un ingreso.",
+      turnMessages: [
+        { role: "user" as const, content: "Registra un ingreso." },
+        { role: "assistant" as const, content: null, toolCalls: [{ id: "write-1", type: "function" as const, function: { name: "record_income", arguments: '{"accountId":1,"categoryId":2,"amount":"10.00","date":"2026-08-24"}' } }] },
+      ],
+    };
+
+    const snapshot = store.setPendingConfirmation("session-a", pending);
+    pending.operation.arguments.amount = "999.00";
+
+    expect(snapshot.messages).toEqual([]);
+    expect(snapshot.pendingOperation).toMatchObject({
+      toolCallId: "write-1",
+      arguments: { amount: "10.00" },
+    });
+    expect(store.getPendingConfirmation("session-a")?.operation.arguments).toMatchObject({ amount: "10.00" });
+    expectError(() => store.setPendingConfirmation("session-a", pending), "PENDING_OPERATION_EXISTS");
+    expect(store.clearPendingConfirmation("session-a").pendingOperation).toBeNull();
+    expectError(() => store.clearPendingConfirmation("session-a"), "PENDING_OPERATION_NOT_FOUND");
   });
 });

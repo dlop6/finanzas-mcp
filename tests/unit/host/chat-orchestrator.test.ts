@@ -231,4 +231,49 @@ describe("chat orchestration", () => {
       code: "TOOL_ROUND_LIMIT",
     });
   });
+
+  it("executes exactly the confirmed write and sends its result to one final LLM call", async () => {
+    const client = toolClient({ content: [{ type: "text", text: "Income recorded." }] });
+    const registry = await registryWith([writeTool], client, ["record_income"]);
+    const deepSeek = llm(response({ content: "The income was recorded." }));
+    const orchestrator = createChatOrchestrator({ deepSeekClient: deepSeek, toolRegistry: registry });
+    const pendingTurnMessages = [
+      { role: "user" as const, content: "Record income." },
+      { role: "assistant" as const, content: null, toolCalls: [{ id: "write-1", type: "function" as const, function: { name: "record_income", arguments: '{"amount":"10.00"}' } }] },
+    ];
+
+    const result = await orchestrator.completeConfirmedWrite({
+      systemPrompt: input.systemPrompt,
+      history: input.history,
+      pendingOperation: { toolCallId: "write-1", serverId: "test-mcp", toolName: "record_income", arguments: { amount: "10.00" } },
+      pendingTurnMessages,
+    });
+
+    expect(client.toolsCall).toHaveBeenCalledTimes(1);
+    expect(client.toolsCall).toHaveBeenCalledWith("record_income", { amount: "10.00" });
+    expect(deepSeek.sendChat).toHaveBeenCalledTimes(1);
+    expect(deepSeek.sendChat.mock.calls[0][1]).toBeUndefined();
+    expect(result.turnMessages).toContainEqual({
+      role: "tool",
+      toolCallId: "write-1",
+      content: JSON.stringify({ content: [{ type: "text", text: "Income recorded." }] }),
+    });
+  });
+
+  it("rejects an altered pending write before executing MCP", async () => {
+    const client = toolClient();
+    const registry = await registryWith([writeTool], client, ["record_income"]);
+    const orchestrator = createChatOrchestrator({ deepSeekClient: llm(), toolRegistry: registry });
+
+    await expect(orchestrator.completeConfirmedWrite({
+      systemPrompt: input.systemPrompt,
+      history: [],
+      pendingOperation: { toolCallId: "write-1", serverId: "test-mcp", toolName: "record_income", arguments: { amount: "20.00" } },
+      pendingTurnMessages: [
+        { role: "user", content: "Record income." },
+        { role: "assistant", content: null, toolCalls: [{ id: "write-1", type: "function", function: { name: "record_income", arguments: '{"amount":"10.00"}' } }] },
+      ],
+    })).rejects.toMatchObject({ code: "PENDING_OPERATION_MISMATCH" });
+    expect(client.toolsCall).not.toHaveBeenCalled();
+  });
 });
