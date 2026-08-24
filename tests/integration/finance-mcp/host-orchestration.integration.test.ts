@@ -120,6 +120,7 @@ describe("Host orchestration over Finance MCP STDIO", () => {
       const chat = createSessionChatService({
         sessionStore: new InMemoryConversationSessionStore({ idGenerator: () => "confirmation-session" }),
         chatOrchestrator: createChatOrchestrator({ deepSeekClient: { sendChat }, toolRegistry: registry }),
+        contextCompactor: { compactIfNeeded: async (input) => ({ compacted: false, conversationSummary: input.conversationSummary, messages: Array.from(structuredClone(input.messages)) }) },
       });
       const session = chat.createSession({ systemPrompt: "Use financial tools when required." });
 

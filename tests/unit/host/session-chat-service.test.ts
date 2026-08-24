@@ -28,10 +28,39 @@ function serviceWith(
         throw new Error("Unexpected confirmed write.");
       }),
     },
+    contextCompactor: { compactIfNeeded: async (input) => ({ compacted: false, conversationSummary: input.conversationSummary, messages: Array.from(structuredClone(input.messages)) }) },
   });
 }
 
 describe("session chat service", () => {
+  it("applies a successful compaction before orchestrating a normal turn", async () => {
+    const store = new InMemoryConversationSessionStore({ idGenerator: () => "session-a" });
+    const run = vi.fn().mockResolvedValue(completedTurn("Done."));
+    const compactIfNeeded = vi.fn().mockResolvedValue({
+      compacted: true,
+      conversationSummary: {
+        factsAndDecisions: ["A fact."], referenceData: ["A reference."], financialContext: ["A balance."], activePendingItems: ["A task."],
+      },
+      messages: [{ role: "user", content: "Recent" }, { role: "assistant", content: "Recent answer" }],
+    });
+    const chat = createSessionChatService({
+      sessionStore: store,
+      chatOrchestrator: { run, completeConfirmedWrite: vi.fn() },
+      contextCompactor: { compactIfNeeded },
+    });
+    const session = chat.createSession({ systemPrompt: "System" });
+    store.appendCompletedTurn(session.sessionId, [
+      { role: "user", content: "Old" }, { role: "assistant", content: "Old answer" },
+      { role: "user", content: "Recent" }, { role: "assistant", content: "Recent answer" },
+    ]);
+
+    await chat.sendMessage(session.sessionId, "Continue");
+
+    expect(run.mock.calls[0][0]).toMatchObject({ contextSummary: expect.stringContaining("A fact.") });
+    expect(run.mock.calls[0][0].history).toEqual([{ role: "user", content: "Recent" }, { role: "assistant", content: "Recent answer" }]);
+    expect(chat.getSession(session.sessionId).conversationSummary).toMatchObject({ factsAndDecisions: ["A fact."] });
+  });
+
   it("integrates with the real orchestrator and sends prior messages to DeepSeek", async () => {
     const sendChat = vi.fn()
       .mockResolvedValueOnce({ content: "The balance is Q100.00.", toolCalls: [], model: "test", finishReason: "stop" })

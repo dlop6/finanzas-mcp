@@ -54,6 +54,7 @@ export type OrchestratedChatResult =
 export type ChatOrchestrationInput = {
   sessionId: string;
   systemPrompt: string;
+  contextSummary?: string;
   history: readonly DeepSeekChatMessage[];
   userMessage: string;
 };
@@ -66,6 +67,7 @@ export type ChatOrchestrator = {
 export type ConfirmedWriteInput = {
   sessionId: string;
   systemPrompt: string;
+  contextSummary?: string;
   history: readonly DeepSeekChatMessage[];
   pendingOperation: PendingWriteOperation;
   pendingTurnMessages: readonly DeepSeekChatMessage[];
@@ -211,10 +213,12 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
     async run(input) {
       const sessionId = requireText(input.sessionId, "sessionId");
       const systemPrompt = requireText(input.systemPrompt, "systemPrompt");
+      const contextSummary = input.contextSummary === undefined ? undefined : requireText(input.contextSummary, "contextSummary");
       const userMessage = requireText(input.userMessage, "userMessage");
       const history = input.history.map(cloneMessage);
       const firstMessages: DeepSeekChatMessage[] = [
         { role: "system", content: systemPrompt },
+        ...(contextSummary ? [{ role: "system" as const, content: contextSummary }] : []),
         ...history,
         { role: "user", content: userMessage },
       ];
@@ -273,6 +277,7 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
     async completeConfirmedWrite(input) {
       const sessionId = requireText(input.sessionId, "sessionId");
       const systemPrompt = requireText(input.systemPrompt, "systemPrompt");
+      const contextSummary = input.contextSummary === undefined ? undefined : requireText(input.contextSummary, "contextSummary");
       const history = input.history.map(cloneMessage);
       const pendingTurnMessages = input.pendingTurnMessages.map(cloneMessage);
       const tool = validatePendingWrite(options.toolRegistry, input.pendingOperation, pendingTurnMessages);
@@ -292,6 +297,7 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
       try {
         finalResponse = await options.deepSeekClient.sendChat([
           { role: "system", content: systemPrompt },
+          ...(contextSummary ? [{ role: "system" as const, content: contextSummary }] : []),
           ...history,
           ...pendingTurnMessages,
           toolMessage,

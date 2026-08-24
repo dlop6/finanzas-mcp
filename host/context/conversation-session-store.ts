@@ -1,5 +1,6 @@
 import type { DeepSeekChatMessage, DeepSeekToolCall } from "@/host/llm";
 import type { PendingWriteOperation } from "@/host/orchestration/chat-orchestrator";
+import { isConversationSummary, type ConversationSummary } from "./context-compactor";
 
 export type SessionId = string;
 
@@ -7,6 +8,7 @@ export type ConversationSessionSnapshot = {
   sessionId: SessionId;
   systemPrompt: string;
   messages: DeepSeekChatMessage[];
+  conversationSummary: ConversationSummary | null;
   pendingOperation: PendingWriteConfirmationSnapshot | null;
 };
 
@@ -39,6 +41,7 @@ export class ConversationSessionError extends Error {
 type ConversationSession = {
   systemPrompt: string;
   messages: DeepSeekChatMessage[];
+  conversationSummary: ConversationSummary | null;
   pendingConfirmation: PendingWriteConfirmation | null;
 };
 
@@ -60,6 +63,7 @@ export type ConversationSessionStore = {
   create(systemPrompt: string): ConversationSessionSnapshot;
   get(sessionId: SessionId): ConversationSessionSnapshot;
   appendCompletedTurn(sessionId: SessionId, messages: readonly DeepSeekChatMessage[]): ConversationSessionSnapshot;
+  applyCompaction(sessionId: SessionId, summary: ConversationSummary, retainedMessages: readonly DeepSeekChatMessage[]): ConversationSessionSnapshot;
   setPendingConfirmation(sessionId: SessionId, pending: PendingWriteConfirmation): ConversationSessionSnapshot;
   getPendingConfirmation(sessionId: SessionId): PendingWriteConfirmation | null;
   clearPendingConfirmation(sessionId: SessionId): ConversationSessionSnapshot;
@@ -171,7 +175,7 @@ export class InMemoryConversationSessionStore implements ConversationSessionStor
       throw new ConversationSessionError("SESSION_ID_COLLISION", "The generated session ID already exists.");
     }
 
-    const session: ConversationSession = { systemPrompt: normalizedSystemPrompt, messages: [], pendingConfirmation: null };
+    const session: ConversationSession = { systemPrompt: normalizedSystemPrompt, messages: [], conversationSummary: null, pendingConfirmation: null };
     this.sessions.set(sessionId, session);
     return this.toSnapshot(sessionId, session);
   }
@@ -190,6 +194,20 @@ export class InMemoryConversationSessionStore implements ConversationSessionStor
     }
 
     session.messages.push(...messages.map(cloneMessage));
+    return this.toSnapshot(normalizedSessionId, session);
+  }
+
+  applyCompaction(sessionId: SessionId, summary: ConversationSummary, retainedMessages: readonly DeepSeekChatMessage[]): ConversationSessionSnapshot {
+    const normalizedSessionId = this.normalizeSessionId(sessionId);
+    const session = this.requireSession(normalizedSessionId);
+    if (!isConversationSummary(summary) || !Array.isArray(retainedMessages) || !retainedMessages.every(isCompletedTurnMessage)) {
+      throw new ConversationSessionError("INVALID_TURN_MESSAGES", "Compacted conversation context is invalid.");
+    }
+    if (retainedMessages.length >= session.messages.length || !retainedMessages.every((message, index) => JSON.stringify(message) === JSON.stringify(session.messages[session.messages.length - retainedMessages.length + index]))) {
+      throw new ConversationSessionError("INVALID_TURN_MESSAGES", "Compacted conversation context is invalid.");
+    }
+    session.conversationSummary = structuredClone(summary);
+    session.messages = retainedMessages.map(cloneMessage);
     return this.toSnapshot(normalizedSessionId, session);
   }
 
@@ -247,6 +265,7 @@ export class InMemoryConversationSessionStore implements ConversationSessionStor
       sessionId,
       systemPrompt: session.systemPrompt,
       messages: session.messages.map(cloneMessage),
+      conversationSummary: session.conversationSummary ? structuredClone(session.conversationSummary) : null,
       pendingOperation: session.pendingConfirmation ? {
         toolCallId: session.pendingConfirmation.operation.toolCallId,
         serverId: session.pendingConfirmation.operation.serverId,

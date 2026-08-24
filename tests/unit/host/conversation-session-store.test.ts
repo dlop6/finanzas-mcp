@@ -24,6 +24,7 @@ describe("in-memory conversation session store", () => {
       sessionId: "session-a",
       systemPrompt: "You are a financial assistant.",
       messages: [],
+      conversationSummary: null,
       pendingOperation: null,
     });
 

@@ -15,6 +15,7 @@ import {
   type PendingWriteConfirmationSnapshot,
   type SessionId,
 } from "./conversation-session-store";
+import { formatConversationSummary, type ContextCompactor } from "./context-compactor";
 
 export type SessionChatResult =
   | Extract<OrchestratedChatResult, { status: "completed" }>
@@ -32,6 +33,7 @@ export type CreateSessionChatServiceOptions = {
   sessionStore: ConversationSessionStore;
   chatOrchestrator: ChatOrchestrator;
   writeOperationDescriber?: WriteOperationDescriber;
+  contextCompactor: ContextCompactor;
 };
 
 function requireUserMessage(value: unknown): string {
@@ -82,6 +84,7 @@ export function createSessionChatService(options: CreateSessionChatServiceOption
           const completed = await options.chatOrchestrator.completeConfirmedWrite({
             sessionId: normalizedSessionId,
             systemPrompt: session.systemPrompt,
+            contextSummary: formatConversationSummary(session.conversationSummary),
             history: session.messages,
             pendingOperation: pending.operation,
             pendingTurnMessages: pending.turnMessages,
@@ -91,10 +94,24 @@ export function createSessionChatService(options: CreateSessionChatServiceOption
         }
 
         const normalizedUserMessage = requireUserMessage(userMessage);
+        let context = {
+          conversationSummary: session.conversationSummary,
+          messages: session.messages,
+        };
+        try {
+          const compacted = await options.contextCompactor.compactIfNeeded(context);
+          if (compacted.compacted && compacted.conversationSummary) {
+            const snapshot = options.sessionStore.applyCompaction(normalizedSessionId, compacted.conversationSummary, compacted.messages);
+            context = { conversationSummary: snapshot.conversationSummary, messages: snapshot.messages };
+          }
+        } catch {
+          // Preserve the current context when DeepSeek cannot summarize it.
+        }
         const result = await options.chatOrchestrator.run({
           sessionId: normalizedSessionId,
           systemPrompt: session.systemPrompt,
-          history: session.messages,
+          contextSummary: formatConversationSummary(context.conversationSummary),
+          history: context.messages,
           userMessage: normalizedUserMessage,
         });
 

@@ -6,6 +6,7 @@ export {
 } from "./deepseek-client";
 export type {
   DeepSeekChatMessage,
+  DeepSeekChatOptions,
   DeepSeekChatResult,
   DeepSeekChatRole,
   DeepSeekClient,

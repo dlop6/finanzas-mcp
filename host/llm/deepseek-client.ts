@@ -122,7 +122,12 @@ export type DeepSeekClient = {
   sendChat(
     messages: readonly DeepSeekChatMessage[],
     tools?: readonly DeepSeekToolDefinition[],
+    options?: DeepSeekChatOptions,
   ): Promise<DeepSeekChatResult>;
+};
+
+export type DeepSeekChatOptions = {
+  responseFormat?: "text" | "json_object";
 };
 
 function isNonEmptyText(value: unknown): value is string {
@@ -302,8 +307,11 @@ export function createDeepSeekClient(options: DeepSeekClientOptions = {}): DeepS
   }
 
   return {
-    async sendChat(messages, tools) {
+    async sendChat(messages, tools, chatOptions = {}) {
       validateMessages(messages);
+      if (chatOptions.responseFormat !== undefined && chatOptions.responseFormat !== "text" && chatOptions.responseFormat !== "json_object") {
+        throw new DeepSeekClientError("INVALID_RESPONSE", "DeepSeek response format is invalid.");
+      }
       const controller = new AbortController();
       let timedOut = false;
       const timeout = setTimeout(() => {
@@ -318,6 +326,7 @@ export function createDeepSeekClient(options: DeepSeekClientOptions = {}): DeepS
           stream: false;
           thinking: { type: "disabled" };
           tools?: readonly DeepSeekToolDefinition[];
+          response_format?: { type: "json_object" };
         } = {
           model: config.model,
           messages: messages.map(serializeMessage),
@@ -327,6 +336,9 @@ export function createDeepSeekClient(options: DeepSeekClientOptions = {}): DeepS
 
         if (tools?.length) {
           requestBody.tools = structuredClone(tools);
+        }
+        if (chatOptions.responseFormat === "json_object") {
+          requestBody.response_format = { type: "json_object" };
         }
 
         const response = await fetchImpl(endpoint, {
