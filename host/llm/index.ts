@@ -15,6 +15,7 @@ export type {
   DeepSeekErrorCode,
   DeepSeekFetch,
   DeepSeekToolCall,
+  DeepSeekToolDefinition,
   DeepSeekUsage,
 } from "./deepseek-client";
 export { sendGeneralChat } from "./general-chat";

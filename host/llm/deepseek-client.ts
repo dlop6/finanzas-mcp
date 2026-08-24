@@ -5,6 +5,15 @@ export type DeepSeekChatMessage = {
   content: string;
 };
 
+export type DeepSeekToolDefinition = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
+
 export type DeepSeekToolCall = {
   id: string;
   type: "function";
@@ -99,7 +108,10 @@ export type DeepSeekClientOptions = {
 };
 
 export type DeepSeekClient = {
-  sendChat(messages: readonly DeepSeekChatMessage[]): Promise<DeepSeekChatResult>;
+  sendChat(
+    messages: readonly DeepSeekChatMessage[],
+    tools?: readonly DeepSeekToolDefinition[],
+  ): Promise<DeepSeekChatResult>;
 };
 
 function validateMessages(messages: readonly DeepSeekChatMessage[]): void {
@@ -234,7 +246,7 @@ export function createDeepSeekClient(options: DeepSeekClientOptions = {}): DeepS
   }
 
   return {
-    async sendChat(messages) {
+    async sendChat(messages, tools) {
       validateMessages(messages);
       const controller = new AbortController();
       let timedOut = false;
@@ -244,17 +256,30 @@ export function createDeepSeekClient(options: DeepSeekClientOptions = {}): DeepS
       }, timeoutMs);
 
       try {
+        const requestBody: {
+          model: string;
+          messages: readonly DeepSeekChatMessage[];
+          stream: false;
+          thinking: { type: "disabled" };
+          tools?: readonly DeepSeekToolDefinition[];
+        } = {
+          model: config.model,
+          messages,
+          stream: false,
+          thinking: { type: "disabled" },
+        };
+
+        if (tools?.length) {
+          requestBody.tools = structuredClone(tools);
+        }
+
         const response = await fetchImpl(endpoint, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${config.apiKey}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            model: config.model,
-            messages,
-            stream: false,
-          }),
+          body: JSON.stringify(requestBody),
           signal: controller.signal,
         });
 

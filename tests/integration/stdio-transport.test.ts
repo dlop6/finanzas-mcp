@@ -10,6 +10,9 @@ import {
 import { startFinanceMcpLocal } from "@/host/mcp-clients/finance-mcp-local";
 import { startFinanceMcpSessionLocal } from "@/host/mcp-clients/finance-mcp-local";
 import { McpLifecycleClient } from "@/host/mcp-clients/mcp-lifecycle-client";
+import { registerFinanceMcpTools } from "@/host/orchestration/finance-mcp-tools";
+import { HostMcpToolRegistry, type McpToolClient } from "@/host/orchestration/mcp-tool-registry";
+import type { McpTool } from "@/shared/mcp";
 
 const projectRoot = process.cwd();
 const fixturePath = resolve(projectRoot, "tests/integration/fixtures/stdio-fixture.ts");
@@ -83,6 +86,43 @@ describe("local MCP STDIO transport", () => {
       });
     } finally {
       await client.close();
+    }
+  });
+
+  it("discovers all Finance MCP tools and converts their public definitions for DeepSeek", async () => {
+    const session = await startFinanceMcpSessionLocal({ onStderr: () => undefined });
+    let discovered: McpTool[] = [];
+    const toolClient: McpToolClient = {
+      toolsList: async () => {
+        const result = await session.toolsList();
+        discovered = result.tools;
+        return result;
+      },
+      toolsCall: session.toolsCall.bind(session),
+    };
+
+    try {
+      const registry = new HostMcpToolRegistry();
+      await registerFinanceMcpTools(registry, toolClient);
+
+      const registered = registry.list();
+      expect(registered).toHaveLength(24);
+      expect(registered.filter((tool) => tool.isWriteOperation)).toHaveLength(15);
+      expect(registered.filter((tool) => !tool.isWriteOperation)).toHaveLength(9);
+      expect(registered.every((tool) => tool.serverId === "finance-mcp")).toBe(true);
+      expect(registered.map((tool) => tool.definition)).toEqual(discovered);
+      expect(registry.toDeepSeekTools()).toEqual(
+        discovered.map((tool) => ({
+          type: "function",
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema,
+          },
+        })),
+      );
+    } finally {
+      await session.close();
     }
   });
 

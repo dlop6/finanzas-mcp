@@ -106,7 +106,33 @@ describe("DeepSeek client", () => {
       model: "test-model",
       messages,
       stream: false,
+      thinking: { type: "disabled" },
     });
+  });
+
+  it("sends public tools without mutating them or adding tool-choice metadata", async () => {
+    const fetchMock = vi.fn(async (...args: Parameters<DeepSeekFetch>) => {
+      void args;
+      return jsonResponse(validResponse());
+    });
+    const client = createDeepSeekClient({ config, fetchImpl: fetchMock });
+    const tools = [{
+      type: "function" as const,
+      function: {
+        name: "get_balance",
+        description: "Get the current balance.",
+        parameters: { type: "object", additionalProperties: false, properties: {} },
+      },
+    }];
+
+    await client.sendChat([{ role: "user", content: "What is my balance?" }], tools);
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    expect(body.tools).toEqual(tools);
+    expect(body).not.toHaveProperty("tool_choice");
+    expect(body).not.toHaveProperty("strict");
+    expect(tools[0].function.parameters).toEqual({ type: "object", additionalProperties: false, properties: {} });
   });
 
   it("returns tool calls and optional usage without executing them", async () => {
