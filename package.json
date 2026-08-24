@@ -26,7 +26,8 @@
     "db:check": "tsx database/check.ts",
     "db:verify": "tsx database/verify.ts",
     "db:repositories:smoke": "tsx database/repository-smoke.ts",
-    "db:finance-tools:smoke": "tsx database/finance-tools-smoke.ts"
+    "db:finance-tools:smoke": "tsx database/finance-tools-smoke.ts",
+    "deepseek:smoke": "tsx host/llm/smoke.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.9.1",
