@@ -89,6 +89,12 @@ The Host-to-Finance boundary is always MCP/JSON-RPC, even when both components r
 
 The future remote mode changes only transport, environment configuration, deployment concerns and database connection. Tool names, input/output contract and financial rules remain the same. Local and remote data remain independent; no synchronization is planned.
 
+### Streamable HTTP transport
+
+Finance MCP now also supports local MCP Streamable HTTP `2025-11-25` at `POST /mcp`. The HTTP server creates an in-memory `FinanceMcpLifecycle` for each `MCP-Session-Id`, while all sessions share the same composed registry, services, repositories and Prisma client. It accepts JSON-RPC over `application/json`; a client must accept both JSON and `text/event-stream`, but the server returns JSON only because it never initiates messages. `GET /mcp` therefore returns `405`.
+
+The transport defaults to `127.0.0.1:3001`, validates explicit Origins against `MCP_ALLOWED_ORIGINS`, has a 1 MiB request limit, and does not provide authentication, persistence, SSE, WebSockets or old HTTP+SSE compatibility. STDIO remains available and uses the same lifecycle and tool composition.
+
 ## Data and authority rules
 
 - PostgreSQL is the persistent runtime source of financial truth through Finance MCP.

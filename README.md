@@ -109,3 +109,15 @@ Stop Finance MCP with `Ctrl+C`. Stop PostgreSQL while preserving its local volum
 ```powershell
 npm run db:down
 ```
+
+## Streamable HTTP transport
+
+Finance MCP also exposes the same 24 tools through local Streamable HTTP MCP `2025-11-25`:
+
+```powershell
+npm run finance:mcp:http
+```
+
+It listens on `http://127.0.0.1:3001/mcp` by default. Send JSON-RPC requests with `POST`, `Content-Type: application/json`, and an `Accept` header that accepts both `application/json` and `text/event-stream`. Initialize first to receive `MCP-Session-Id`; subsequent requests must include that header and `MCP-Protocol-Version: 2025-11-25`.
+
+`GET /mcp` returns `405` because this server does not initiate messages and does not use SSE. This local transport has no authentication, remote deployment, or Host HTTP client yet.

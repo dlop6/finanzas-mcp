@@ -11,18 +11,12 @@ import {
   parseJsonRpcMessage,
   serializeJsonRpcMessage,
   type JsonRpcErrorResponse,
-  type JsonRpcNotification,
   type JsonRpcRequest,
   type JsonRpcSuccessResponse,
 } from "@/shared/jsonrpc";
+import type { FinanceMcpMessageHandler } from "./message-handler";
 
-export type FinanceMcpMessageHandler = (
-  message: JsonRpcRequest | JsonRpcNotification,
-) =>
-  | JsonRpcSuccessResponse
-  | JsonRpcErrorResponse
-  | undefined
-  | Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse | undefined>;
+export type { FinanceMcpMessageHandler } from "./message-handler";
 
 export interface FinanceMcpStdioServerOptions {
   handleMessage: FinanceMcpMessageHandler;

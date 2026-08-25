@@ -19,7 +19,7 @@ import {
   toMcpCallToolParams,
   type McpInitializeResult,
 } from "@/shared/mcp";
-import type { FinanceMcpMessageHandler } from "./stdio-server";
+import type { FinanceMcpMessageHandler } from "./message-handler";
 import { FinanceToolRegistry } from "./tools/registry";
 
 export type FinanceMcpLifecycleState = "AWAITING_INITIALIZE" | "AWAITING_INITIALIZED" | "READY";
