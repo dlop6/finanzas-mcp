@@ -130,4 +130,17 @@ npm run finance:mcp:http
 
 It listens on `http://127.0.0.1:3001/mcp` by default. Send JSON-RPC requests with `POST`, `Content-Type: application/json`, and an `Accept` header that accepts both `application/json` and `text/event-stream`. Initialize first to receive `MCP-Session-Id`; subsequent requests must include that header and `MCP-Protocol-Version: 2025-11-25`.
 
-`GET /mcp` returns `405` because this server does not initiate messages and does not use SSE. This local transport has no authentication, remote deployment, or Host HTTP client yet.
+`GET /mcp` returns `405` because this server does not initiate messages and does not use SSE.
+
+## Render deployment
+
+The public Finance MCP is available at [https://finanzas-mcp-server.onrender.com/mcp](https://finanzas-mcp-server.onrender.com/mcp).
+
+It runs as a Render Web Service from this repository with:
+
+```text
+Build: npm ci --include=dev; npm run db:generate
+Start: npm run finance:mcp:http
+```
+
+Render provides `PORT`. Set `MCP_HTTP_HOST=0.0.0.0` and use the Render PostgreSQL Internal Database URL as `DATABASE_URL`. Leave the HTTP health-check path empty so Render uses its default TCP check. The public endpoint has no authentication in this MVP.
