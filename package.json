@@ -30,7 +30,9 @@
     "deepseek:smoke": "tsx host/llm/smoke.ts",
     "orchestration:smoke": "tsx host/orchestration/smoke.ts",
     "git:mcp:setup": "tsx scripts/setup-git-mcp.ts",
-    "test:git:integration": "vitest run --config vitest.git.config.mts"
+    "test:git:integration": "vitest run --config vitest.git.config.mts",
+    "demo:e2e": "tsx host/demo/cli.ts",
+    "test:e2e:local": "vitest run --config vitest.e2e.config.mts"
   },
   "dependencies": {
     "@modelcontextprotocol/server-filesystem": "2026.7.10",

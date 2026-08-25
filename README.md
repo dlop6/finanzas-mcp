@@ -50,6 +50,18 @@ npm run test:git:integration
 
 It can operate only in `docs/generated/git-demo`. Reads run directly; staging, commits, resets, branch creation, and checkout require explicit Host confirmation. It cannot access this project repository or use remotes.
 
+## End-to-end demo
+
+With PostgreSQL running and the Git MCP prepared, start the local interactive demo:
+
+```powershell
+npm run db:up
+npm run git:mcp:setup
+npm run demo:e2e
+```
+
+It obtains a complete financial report through Finance MCP, saves it in `docs/generated/git-demo` through Filesystem MCP, and stages and commits it through Git MCP. Writing, staging, and committing each require a separate confirmation. The demo never pushes to a remote. Its isolated automated check is available with `npm run test:e2e:local`.
+
 ## Usage
 
 Start the local Finance MCP server:
