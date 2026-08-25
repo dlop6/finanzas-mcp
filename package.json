@@ -28,7 +28,9 @@
     "db:repositories:smoke": "tsx database/repository-smoke.ts",
     "db:finance-tools:smoke": "tsx database/finance-tools-smoke.ts",
     "deepseek:smoke": "tsx host/llm/smoke.ts",
-    "orchestration:smoke": "tsx host/orchestration/smoke.ts"
+    "orchestration:smoke": "tsx host/orchestration/smoke.ts",
+    "git:mcp:setup": "tsx scripts/setup-git-mcp.ts",
+    "test:git:integration": "vitest run --config vitest.git.config.mts"
   },
   "dependencies": {
     "@modelcontextprotocol/server-filesystem": "2026.7.10",

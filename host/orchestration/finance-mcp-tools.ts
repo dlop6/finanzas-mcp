@@ -3,7 +3,7 @@ import { HostMcpToolRegistry, type HostToolMetadata } from "./mcp-tool-registry"
 
 export const FINANCE_MCP_SERVER_ID = "finance-mcp";
 
-const financeMcpToolMetadata = {
+export const financeMcpToolMetadata = {
   record_income: { isWriteOperation: true },
   record_expense: { isWriteOperation: true },
   list_transactions: { isWriteOperation: false },

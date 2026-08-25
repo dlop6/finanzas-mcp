@@ -8,11 +8,14 @@ The server runs as a separate Node.js process, communicates through STDIO, and s
 
 The Host can also start the official Filesystem MCP as a separate local process. Its access is restricted to `docs/generated`; it cannot access the rest of the repository. Filesystem reads run directly, while file creation, edits, directory creation, and moves require explicit Host confirmation.
 
+The Host can also start the official Git MCP in the isolated `docs/generated/git-demo` repository. Git reads run directly; staging, commits, resets, branch creation, and checkout require explicit Host confirmation. Git MCP cannot access the main project repository, and remote Git operations are not included.
+
 ## Requirements
 
 - Node.js 22.12 or later
 - npm
 - Docker Desktop
+- Python 3.10 or later and Git (for the optional local Git MCP)
 
 ## Installation
 
@@ -21,6 +24,7 @@ From the project root, install the dependencies and create the local environment
 ```powershell
 npm ci
 Copy-Item .env.example .env
+npm run git:mcp:setup
 ```
 
 Start PostgreSQL and prepare the database:
@@ -34,6 +38,17 @@ npm run db:verify
 ```
 
 PostgreSQL runs locally on port `5434`. The seed creates the deterministic `Tienda Demo` dataset. Running the seed again replaces the local financial data.
+
+## Git MCP
+
+Prepare and verify the isolated Git MCP runtime with:
+
+```powershell
+npm run git:mcp:setup
+npm run test:git:integration
+```
+
+It can operate only in `docs/generated/git-demo`. Reads run directly; staging, commits, resets, branch creation, and checkout require explicit Host confirmation. It cannot access this project repository or use remotes.
 
 ## Usage
 
