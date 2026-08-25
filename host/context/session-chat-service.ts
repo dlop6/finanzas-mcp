@@ -4,7 +4,7 @@ import {
   classifyConfirmationInput,
   confirmationReminderMessage,
   confirmationRequiredMessage,
-  FinanceWriteOperationDescriber,
+  HostWriteOperationDescriber,
   type WriteOperationDescriber,
 } from "@/host/confirmation";
 import {
@@ -45,7 +45,7 @@ function requireUserMessage(value: unknown): string {
 
 export function createSessionChatService(options: CreateSessionChatServiceOptions): SessionChatService {
   const busySessionIds = new Set<SessionId>();
-  const writeOperationDescriber = options.writeOperationDescriber ?? new FinanceWriteOperationDescriber();
+  const writeOperationDescriber = options.writeOperationDescriber ?? new HostWriteOperationDescriber();
 
   return {
     createSession(input) {

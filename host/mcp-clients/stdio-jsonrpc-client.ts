@@ -146,12 +146,12 @@ export class StdioJsonRpcClient {
         resolve();
       });
       child.once("error", (error) => {
-        const transportError = new StdioTransportError("PROCESS_ERROR", "Finance MCP process could not start");
+        const transportError = new StdioTransportError("PROCESS_ERROR", "MCP server process could not start");
         this.failTransport(transportError);
         reject(error);
       });
     }).catch(() => {
-      throw new StdioTransportError("PROCESS_ERROR", "Finance MCP process could not start");
+      throw new StdioTransportError("PROCESS_ERROR", "MCP server process could not start");
     });
   }
 
@@ -207,7 +207,7 @@ export class StdioJsonRpcClient {
         }
 
         this.pending.delete(request.id);
-        this.rejectPendingRequest(request.id, currentPending, new StdioTransportError("WRITE_ERROR", "Could not write JSON-RPC request to Finance MCP"), "TRANSPORT_ERROR");
+        this.rejectPendingRequest(request.id, currentPending, new StdioTransportError("WRITE_ERROR", "Could not write JSON-RPC request to MCP server"), "TRANSPORT_ERROR");
       });
     });
   }
@@ -254,7 +254,7 @@ export class StdioJsonRpcClient {
         payload: serialized,
         status: "TRANSPORT_ERROR",
       });
-      throw new StdioTransportError("WRITE_ERROR", "Could not write JSON-RPC notification to Finance MCP");
+      throw new StdioTransportError("WRITE_ERROR", "Could not write JSON-RPC notification to MCP server");
     });
   }
 
@@ -290,7 +290,7 @@ export class StdioJsonRpcClient {
     this.outputReader.on("line", (line) => this.handleStdoutLine(line));
     child.stderr.on("data", (chunk: Buffer) => this.consumeStderr(chunk.toString()));
     child.on("error", () => {
-      this.failTransport(new StdioTransportError("PROCESS_ERROR", "Finance MCP process failed"));
+      this.failTransport(new StdioTransportError("PROCESS_ERROR", "MCP server process failed"));
     });
     child.on("exit", (code, signal) => {
       if (this.state === "closing" || this.state === "closed") {
@@ -298,7 +298,7 @@ export class StdioJsonRpcClient {
       }
 
       const details = signal ? `signal ${signal}` : `code ${code ?? "unknown"}`;
-      this.failTransport(new StdioTransportError("PROCESS_EXIT", `Finance MCP process exited with ${details}`));
+      this.failTransport(new StdioTransportError("PROCESS_EXIT", `MCP server process exited with ${details}`));
     });
     child.on("close", () => {
       this.outputReader?.close();
@@ -320,7 +320,7 @@ export class StdioJsonRpcClient {
         payload: line,
         status: "PROTOCOL_ERROR",
       });
-      this.failTransport(new StdioTransportError("PROTOCOL_ERROR", "Finance MCP emitted an invalid JSON-RPC response"));
+      this.failTransport(new StdioTransportError("PROTOCOL_ERROR", "MCP server emitted an invalid JSON-RPC response"));
       return;
     }
 
@@ -333,7 +333,7 @@ export class StdioJsonRpcClient {
         payload: line,
         status: "PROTOCOL_ERROR",
       });
-      this.failTransport(new StdioTransportError("PROTOCOL_ERROR", "Finance MCP emitted a response without a request ID"));
+      this.failTransport(new StdioTransportError("PROTOCOL_ERROR", "MCP server emitted a response without a request ID"));
       return;
     }
 
@@ -347,7 +347,7 @@ export class StdioJsonRpcClient {
         payload: line,
         status: "PROTOCOL_ERROR",
       });
-      this.failTransport(new StdioTransportError("PROTOCOL_ERROR", "Finance MCP emitted a response with an unknown ID"));
+      this.failTransport(new StdioTransportError("PROTOCOL_ERROR", "MCP server emitted a response with an unknown ID"));
       return;
     }
 

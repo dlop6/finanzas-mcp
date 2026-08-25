@@ -2,13 +2,18 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { join } from "node:path";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   StdioJsonRpcClient,
   StdioTransportError,
 } from "@/host/mcp-clients/stdio-jsonrpc-client";
 import { startFinanceMcpLocal } from "@/host/mcp-clients/finance-mcp-local";
 import { startFinanceMcpSessionLocal } from "@/host/mcp-clients/finance-mcp-local";
+import { startFilesystemMcpSessionLocal } from "@/host/mcp-clients/filesystem-mcp-local";
 import { McpLifecycleClient } from "@/host/mcp-clients/mcp-lifecycle-client";
 import {
   HOST_MCP_LOG_SESSION_ID,
@@ -16,10 +21,15 @@ import {
   INVALID_MCP_PAYLOAD,
 } from "@/host/mcp-clients/mcp-interaction-log";
 import { registerFinanceMcpTools } from "@/host/orchestration/finance-mcp-tools";
+import { registerFilesystemMcpTools } from "@/host/orchestration/filesystem-mcp-tools";
 import { HostMcpToolRegistry, type McpToolClient } from "@/host/orchestration/mcp-tool-registry";
+import { createChatOrchestrator } from "@/host/orchestration/chat-orchestrator";
+import { createSessionChatService } from "@/host/context/session-chat-service";
+import { InMemoryConversationSessionStore } from "@/host/context/conversation-session-store";
 import type { McpTool } from "@/shared/mcp";
 
 const projectRoot = process.cwd();
+const require = createRequire(import.meta.url);
 const fixturePath = resolve(projectRoot, "tests/integration/fixtures/stdio-fixture.ts");
 const financeServerPath = resolve(projectRoot, "servers/finance-mcp/stdio.ts");
 const financeToolsFixturePath = resolve(projectRoot, "tests/integration/fixtures/finance-tools-fixture.ts");
@@ -66,6 +76,13 @@ async function closeRawServer(child: ChildProcessWithoutNullStreams): Promise<vo
   const closed = once(child, "close");
   child.stdin.end();
   await closed;
+}
+
+function systemEnvironment(): NodeJS.ProcessEnv {
+  const keys = process.platform === "win32"
+    ? ["PATH", "SystemRoot", "ComSpec", "PATHEXT", "TEMP", "TMP"]
+    : ["PATH", "TMPDIR", "LANG", "LC_ALL"];
+  return Object.fromEntries(keys.flatMap((key) => process.env[key] === undefined ? [] : [[key, process.env[key]]])) as NodeJS.ProcessEnv;
 }
 
 afterEach(async () => {
@@ -157,6 +174,69 @@ describe("local MCP STDIO transport", () => {
       await session.close();
     }
   });
+
+  it("starts the official Filesystem MCP inside docs/generated and registers its complete catalog", async () => {
+    const logs = new InMemoryMcpInteractionLogStore();
+    const session = await startFilesystemMcpSessionLocal({ onStderr: () => undefined, interactionLogger: logs });
+    try {
+      const registry = new HostMcpToolRegistry();
+      await registerFilesystemMcpTools(registry, {
+        toolsList: session.toolsList.bind(session),
+        toolsCall: session.toolsCall.bind(session),
+      });
+      expect(registry.list()).toHaveLength(14);
+      expect(registry.list().filter((tool) => tool.isWriteOperation)).toHaveLength(4);
+      await expect(session.toolsCall("read_text_file", { path: resolve(projectRoot, "docs/generated/.gitkeep") })).resolves.toMatchObject({ content: [{ type: "text" }] });
+      await expect(session.toolsCall("read_text_file", { path: resolve(projectRoot, "README.md") })).resolves.toMatchObject({ isError: true });
+      expect(logs.listBySession(HOST_MCP_LOG_SESSION_ID)).toContainEqual(expect.objectContaining({ serverId: "filesystem-mcp", method: "tools/list" }));
+    } finally {
+      await session.close();
+    }
+  }, 15_000);
+
+  it("executes a confirmed filesystem write exactly once through the official MCP process", async () => {
+    const allowedDirectory = await mkdtemp(join(tmpdir(), "finance-mcp-filesystem-"));
+    const outputPath = join(allowedDirectory, "report.md");
+    await writeFile(join(allowedDirectory, "source.md"), "# Source\n", "utf8");
+    const logs = new InMemoryMcpInteractionLogStore();
+    const transport = new StdioJsonRpcClient({
+      command: process.execPath,
+      args: [require.resolve("@modelcontextprotocol/server-filesystem/dist/index.js"), allowedDirectory],
+      cwd: projectRoot,
+      env: systemEnvironment(),
+      onStderr: () => undefined,
+      serverId: "filesystem-mcp",
+      interactionLogger: logs,
+    });
+    const client = new McpLifecycleClient(transport);
+    await transport.start();
+    await client.initialize();
+
+    const registry = new HostMcpToolRegistry();
+    await registerFilesystemMcpTools(registry, { toolsList: client.toolsList.bind(client), toolsCall: client.toolsCall.bind(client) });
+    const sendChat = vi.fn()
+      .mockResolvedValueOnce({ content: null, toolCalls: [{ id: "write-1", type: "function", function: { name: "write_file", arguments: JSON.stringify({ path: outputPath, content: "# Generated\n" }) } }], model: "test", finishReason: "tool_calls" })
+      .mockResolvedValueOnce({ content: "The Markdown report was created.", toolCalls: [], model: "test", finishReason: "stop" });
+    const chat = createSessionChatService({
+      sessionStore: new InMemoryConversationSessionStore({ idGenerator: () => "filesystem-session" }),
+      chatOrchestrator: createChatOrchestrator({ deepSeekClient: { sendChat }, toolRegistry: registry }),
+      contextCompactor: { compactIfNeeded: async (input) => ({ compacted: false, conversationSummary: input.conversationSummary, messages: Array.from(structuredClone(input.messages)) }) },
+    });
+    const session = chat.createSession({ systemPrompt: "Use the filesystem tools." });
+
+    try {
+      const requested = await chat.sendMessage(session.sessionId, "Create the report.");
+      expect(requested).toMatchObject({ status: "confirmation_required", pendingOperation: { toolName: "write_file" } });
+      await expect(readFile(outputPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(chat.sendMessage(session.sessionId, "sí")).resolves.toMatchObject({ status: "completed" });
+      await expect(readFile(outputPath, "utf8")).resolves.toBe("# Generated\n");
+      expect(logs.listBySession("filesystem-session")).toContainEqual(expect.objectContaining({ serverId: "filesystem-mcp", method: "tools/call", status: "SENT" }));
+      expect(sendChat).toHaveBeenCalledTimes(2);
+    } finally {
+      await client.close();
+      await rm(allowedDirectory, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   it("discovers and calls a test-only tool over a real STDIO session", async () => {
     const transport = new StdioJsonRpcClient({

@@ -48,7 +48,7 @@ export class McpLifecycleClient {
       const result = await this.transport.request<unknown>(MCP_METHODS.INITIALIZE, params, { sessionId: HOST_MCP_LOG_SESSION_ID });
 
       if (!isMcpInitializeResult(result)) {
-        throw new StdioTransportError("PROTOCOL_ERROR", "Finance MCP returned an invalid initialize result");
+        throw new StdioTransportError("PROTOCOL_ERROR", "MCP server returned an invalid initialize result");
       }
 
       await this.transport.notify(MCP_METHODS.INITIALIZED_NOTIFICATION, undefined, { sessionId: HOST_MCP_LOG_SESSION_ID });
@@ -98,6 +98,6 @@ export class McpLifecycleClient {
 
     this.currentState = "CLOSED";
     await this.transport.close();
-    throw new StdioTransportError("PROTOCOL_ERROR", `Finance MCP returned an invalid ${method} result`);
+    throw new StdioTransportError("PROTOCOL_ERROR", `MCP server returned an invalid ${method} result`);
   }
 }

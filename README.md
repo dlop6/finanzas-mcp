@@ -6,6 +6,8 @@ Finance MCP is a local Model Context Protocol server for small-business financia
 
 The server runs as a separate Node.js process, communicates through STDIO, and stores its state in PostgreSQL through Prisma. It provides 24 tools for transactions, debts, receivables, inventory, cash flow, projections, and purchase viability. All financial calculations are performed by Finance MCP.
 
+The Host can also start the official Filesystem MCP as a separate local process. Its access is restricted to `docs/generated`; it cannot access the rest of the repository. Filesystem reads run directly, while file creation, edits, directory creation, and moves require explicit Host confirmation.
+
 ## Requirements
 
 - Node.js 22.12 or later

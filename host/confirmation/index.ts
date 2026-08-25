@@ -9,3 +9,5 @@ export {
 export type { ConfirmationDecision } from "./confirmation-policy";
 export { FinanceWriteOperationDescriber, financeWriteToolNames } from "./finance-write-describer";
 export type { WriteOperationDescriber } from "./finance-write-describer";
+export { FilesystemWriteOperationDescriber, filesystemWriteToolNames } from "./filesystem-write-describer";
+export { HostWriteOperationDescriber } from "./host-write-describer";

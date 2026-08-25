@@ -60,8 +60,36 @@ export interface McpTextContent {
   text: string;
 }
 
+export interface McpImageContent {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
+export interface McpAudioContent {
+  type: "audio";
+  data: string;
+  mimeType: string;
+}
+
+export interface McpEmbeddedResourceContent {
+  type: "resource";
+  resource: {
+    uri: string;
+    mimeType?: string;
+    text?: string;
+    blob?: string;
+  };
+}
+
+export type McpContent =
+  | McpTextContent
+  | McpImageContent
+  | McpAudioContent
+  | McpEmbeddedResourceContent;
+
 export interface McpCallToolResult {
-  content: McpTextContent[];
+  content: McpContent[];
   isError?: boolean;
   structuredContent?: Record<string, unknown>;
 }
@@ -143,11 +171,38 @@ function isMcpTextContent(value: unknown): value is McpTextContent {
   return isRecord(value) && value.type === "text" && typeof value.text === "string";
 }
 
+function isMcpBinaryContent(value: unknown, type: "image" | "audio"): value is McpImageContent | McpAudioContent {
+  return isRecord(value) && value.type === type && typeof value.data === "string" && typeof value.mimeType === "string";
+}
+
+function isMcpEmbeddedResourceContent(value: unknown): value is McpEmbeddedResourceContent {
+  if (!isRecord(value) || value.type !== "resource" || !isRecord(value.resource) || typeof value.resource.uri !== "string") {
+    return false;
+  }
+
+  const { mimeType, text, blob } = value.resource;
+  return (
+    (mimeType === undefined || typeof mimeType === "string") &&
+    (text === undefined || typeof text === "string") &&
+    (blob === undefined || typeof blob === "string") &&
+    (typeof text === "string" || typeof blob === "string")
+  );
+}
+
+function isMcpContent(value: unknown): value is McpContent {
+  return (
+    isMcpTextContent(value) ||
+    isMcpBinaryContent(value, "image") ||
+    isMcpBinaryContent(value, "audio") ||
+    isMcpEmbeddedResourceContent(value)
+  );
+}
+
 export function isMcpCallToolResult(value: unknown): value is McpCallToolResult {
   return (
     isRecord(value) &&
     Array.isArray(value.content) &&
-    value.content.every(isMcpTextContent) &&
+    value.content.every(isMcpContent) &&
     (value.isError === undefined || typeof value.isError === "boolean") &&
     (value.structuredContent === undefined || isRecord(value.structuredContent))
   );

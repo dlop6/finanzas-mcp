@@ -31,6 +31,7 @@
     "orchestration:smoke": "tsx host/orchestration/smoke.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/server-filesystem": "2026.7.10",
     "@prisma/adapter-pg": "7.9.1",
     "@prisma/client": "7.9.1",
     "ajv": "8.20.0",
