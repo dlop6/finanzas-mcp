@@ -45,3 +45,6 @@ next-env.d.ts
 # local Git MCP runtime
 /.venv-git-mcp/
 /docs/generated/git-demo/
+
+# local Wireshark/TLS capture artifacts
+/docs/wireshark/local/
