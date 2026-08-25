@@ -110,6 +110,16 @@ Stop Finance MCP with `Ctrl+C`. Stop PostgreSQL while preserving its local volum
 npm run db:down
 ```
 
+## Remote database initialization
+
+To initialize a new Render PostgreSQL database from this computer, store its External Database URL only as `DATABASE_URL_REMOTE` in your local `.env`, then run:
+
+```powershell
+npm run db:remote:setup
+```
+
+The command requires an explicit confirmation, applies the existing migrations, loads the canonical dataset, and verifies it. It only accepts an empty external TLS Render database; it is not a reset command. UN-40 will use Render's Internal Database URL as `DATABASE_URL` for the deployed MCP.
+
 ## Streamable HTTP transport
 
 Finance MCP also exposes the same 24 tools through local Streamable HTTP MCP `2025-11-25`:

@@ -1,7 +1,8 @@
 import "dotenv/config";
 
-import { Prisma } from "./generated/prisma/client";
-import { prisma } from "./client";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { Prisma, type PrismaClient } from "./generated/prisma/client";
 
 const CANONICAL_DATE = new Date("2026-08-08T00:00:00.000Z");
 const WINDOW_START = new Date("2026-06-09T00:00:00.000Z");
@@ -21,7 +22,7 @@ function assertMoney(value: Prisma.Decimal, expected: string, label: string): vo
   assertCondition(value.decimalPlaces() <= 2, `${label} has more than two decimal places`);
 }
 
-async function main(): Promise<void> {
+export async function verifyFinanceSeed(prisma: PrismaClient): Promise<void> {
   const [businessCount, accountCount, categoryCount, transactionCount, fixedExpenseCount, debtCount, pendingDebtCount, receivableCount, productCount, movementCount] = await Promise.all([
     prisma.business.count(),
     prisma.account.count(),
@@ -111,16 +112,24 @@ async function main(): Promise<void> {
   `;
   assertCondition(numericColumns.length === 8, "Expected all monetary columns to use numeric precision");
   assertCondition(numericColumns.every((column) => column.numeric_scale === 2), "Monetary columns must use scale 2");
-
-  console.log("Financial seed verification passed for Tienda Demo (2026-08-08).");
 }
 
-main()
-  .catch((error: unknown) => {
+async function main(): Promise<void> {
+  const { prisma } = await import("./client");
+  try {
+    await verifyFinanceSeed(prisma);
+    console.log("Financial seed verification passed for Tienda Demo (2026-08-08).");
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+const isEntrypoint = process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+
+if (isEntrypoint) {
+  main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : "Database verification failed";
     console.error(message.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[redacted connection]"));
     process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });
+}

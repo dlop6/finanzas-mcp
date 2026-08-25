@@ -60,25 +60,44 @@ const products: ProductSeed[] = [
   { name: "Leche 1 L", stock: 4, minimumStock: 6, unitCost: "8.00", salePrice: "11.00", incoming: 12, outgoing: 8 },
 ];
 
-export async function seedFinanceDatabase(client: PrismaClient): Promise<void> {
-  if (process.env.NODE_ENV === "production") {
+export type FinanceSeedOptions = {
+  target?: "local" | "remote";
+};
+
+async function assertRemoteSeedIsEmpty(tx: Prisma.TransactionClient): Promise<void> {
+  const counts = await Promise.all([
+    tx.business.count(), tx.account.count(), tx.category.count(), tx.transaction.count(), tx.fixedExpense.count(),
+    tx.debt.count(), tx.receivable.count(), tx.product.count(), tx.inventoryMovement.count(),
+  ]);
+  if (counts.some((count) => count !== 0)) {
+    throw new Error("Remote financial database must be empty before it can be seeded");
+  }
+}
+
+export async function seedFinanceDatabase(client: PrismaClient, options: FinanceSeedOptions = {}): Promise<void> {
+  const target = options.target ?? "local";
+  if (target === "local" && process.env.NODE_ENV === "production") {
     throw new Error("The local financial seed cannot run in production");
   }
 
   await client.$transaction(async (tx) => {
-    await tx.$executeRaw`
-      TRUNCATE TABLE
-        "InventoryMovement",
-        "Product",
-        "Receivable",
-        "Debt",
-        "FixedExpense",
-        "Transaction",
-        "Category",
-        "Account",
-        "Business"
-      RESTART IDENTITY CASCADE
-    `;
+    if (target === "local") {
+      await tx.$executeRaw`
+        TRUNCATE TABLE
+          "InventoryMovement",
+          "Product",
+          "Receivable",
+          "Debt",
+          "FixedExpense",
+          "Transaction",
+          "Category",
+          "Account",
+          "Business"
+        RESTART IDENTITY CASCADE
+      `;
+    } else {
+      await assertRemoteSeedIsEmpty(tx);
+    }
 
     const business = await tx.business.create({
       data: {
@@ -240,7 +259,7 @@ export async function seedFinanceDatabase(client: PrismaClient): Promise<void> {
         },
       });
     }
-  });
+  }, target === "remote" ? { maxWait: 10_000, timeout: 30_000 } : undefined);
 }
 
 async function main(): Promise<void> {
