@@ -1,5 +1,5 @@
 import { startFilesystemMcpSessionLocal } from "@/host/mcp-clients/filesystem-mcp-local";
-import { startFinanceMcpSessionLocal } from "@/host/mcp-clients/finance-mcp-local";
+import { startFinanceMcpSession, type StartFinanceMcpSessionOptions } from "@/host/mcp-clients/finance-mcp-client";
 import { startGitMcpSessionLocal } from "@/host/mcp-clients/git-mcp-local";
 import { InMemoryMcpInteractionLogStore, type McpInteractionLogReader } from "@/host/mcp-clients/mcp-interaction-log";
 import { type McpLifecycleClient } from "@/host/mcp-clients/mcp-lifecycle-client";
@@ -8,7 +8,7 @@ import { registerFinanceMcpTools } from "@/host/orchestration/finance-mcp-tools"
 import { registerGitMcpTools } from "@/host/orchestration/git-mcp-tools";
 import { HostMcpToolRegistry } from "@/host/orchestration/mcp-tool-registry";
 
-export type LocalMcpRuntime = {
+export type HostMcpRuntime = {
   registry: HostMcpToolRegistry;
   interactionLogs: McpInteractionLogReader;
   financeClient: McpLifecycleClient;
@@ -17,19 +17,25 @@ export type LocalMcpRuntime = {
   close(): Promise<void>;
 };
 
-export class LocalMcpRuntimeError extends Error {
+export class HostMcpRuntimeError extends Error {
   constructor(public readonly code: "START_FAILED" | "INVALID_CATALOG", message: string) {
     super(message);
-    this.name = "LocalMcpRuntimeError";
+    this.name = "HostMcpRuntimeError";
   }
 }
 
-export async function startLocalMcpRuntime(): Promise<LocalMcpRuntime> {
+export async function startHostMcpRuntime(
+  options: { finance?: StartFinanceMcpSessionOptions } = {},
+): Promise<HostMcpRuntime> {
   const logs = new InMemoryMcpInteractionLogStore();
   const started: McpLifecycleClient[] = [];
 
   try {
-    const financeClient = await startFinanceMcpSessionLocal({ interactionLogger: logs, onStderr: () => undefined });
+    const financeClient = await startFinanceMcpSession({
+      ...options.finance,
+      interactionLogger: logs,
+      onStderr: () => undefined,
+    });
     started.push(financeClient);
     const filesystemClient = await startFilesystemMcpSessionLocal({ interactionLogger: logs, onStderr: () => undefined });
     started.push(filesystemClient);
@@ -42,7 +48,7 @@ export async function startLocalMcpRuntime(): Promise<LocalMcpRuntime> {
     await registerGitMcpTools(registry, gitClient);
     const tools = registry.list();
     if (tools.length !== 50 || tools.filter((tool) => tool.isWriteOperation).length !== 24) {
-      throw new LocalMcpRuntimeError("INVALID_CATALOG", "The local MCP catalog is incomplete.");
+      throw new HostMcpRuntimeError("INVALID_CATALOG", "The Host MCP catalog is incomplete.");
     }
 
     let closed = false;
@@ -60,7 +66,7 @@ export async function startLocalMcpRuntime(): Promise<LocalMcpRuntime> {
     };
   } catch (error) {
     await Promise.allSettled(started.reverse().map((client) => client.close()));
-    if (error instanceof LocalMcpRuntimeError) throw error;
-    throw new LocalMcpRuntimeError("START_FAILED", "Could not start the local MCP runtime.");
+    if (error instanceof HostMcpRuntimeError) throw error;
+    throw new HostMcpRuntimeError("START_FAILED", "Could not start the Host MCP runtime.");
   }
 }

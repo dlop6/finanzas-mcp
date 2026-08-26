@@ -9,14 +9,17 @@ import {
   type McpInitializeParams,
   type McpListToolsResult,
 } from "@/shared/mcp";
-import {
-  StdioJsonRpcClient,
-  StdioTransportError,
-  type McpRequestContext,
-} from "./stdio-jsonrpc-client";
+import type { McpJsonRpcTransport, McpRequestContext } from "./mcp-jsonrpc-transport";
 import { HOST_MCP_LOG_SESSION_ID } from "./mcp-interaction-log";
 
 export type McpClientState = "DISCONNECTED" | "INITIALIZING" | "READY" | "CLOSED";
+
+export class McpLifecycleError extends Error {
+  constructor(public readonly code: "INVALID_STATE" | "PROTOCOL_ERROR", message: string) {
+    super(message);
+    this.name = "McpLifecycleError";
+  }
+}
 
 const HOST_INFO: McpImplementationInfo = {
   name: "finanzas-mcp-host",
@@ -26,7 +29,7 @@ const HOST_INFO: McpImplementationInfo = {
 export class McpLifecycleClient {
   private currentState: McpClientState = "DISCONNECTED";
 
-  constructor(private readonly transport: StdioJsonRpcClient) {}
+  constructor(private readonly transport: McpJsonRpcTransport) {}
 
   get state(): McpClientState {
     return this.currentState;
@@ -34,7 +37,7 @@ export class McpLifecycleClient {
 
   async initialize(): Promise<void> {
     if (this.currentState !== "DISCONNECTED") {
-      throw new StdioTransportError("INVALID_STATE", "MCP client cannot initialize in its current state");
+      throw new McpLifecycleError("INVALID_STATE", "MCP client cannot initialize in its current state");
     }
 
     this.currentState = "INITIALIZING";
@@ -48,14 +51,14 @@ export class McpLifecycleClient {
       const result = await this.transport.request<unknown>(MCP_METHODS.INITIALIZE, params, { sessionId: HOST_MCP_LOG_SESSION_ID });
 
       if (!isMcpInitializeResult(result)) {
-        throw new StdioTransportError("PROTOCOL_ERROR", "MCP server returned an invalid initialize result");
+        throw new McpLifecycleError("PROTOCOL_ERROR", "MCP server returned an invalid initialize result");
       }
 
       await this.transport.notify(MCP_METHODS.INITIALIZED_NOTIFICATION, undefined, { sessionId: HOST_MCP_LOG_SESSION_ID });
       this.currentState = "READY";
     } catch (error) {
       this.currentState = "CLOSED";
-      await this.transport.close();
+      await this.transport.close().catch(() => undefined);
       throw error;
     }
   }
@@ -83,7 +86,7 @@ export class McpLifecycleClient {
 
   private assertReady(): void {
     if (this.currentState !== "READY") {
-      throw new StdioTransportError("INVALID_STATE", "MCP client is not ready for tool operations");
+      throw new McpLifecycleError("INVALID_STATE", "MCP client is not ready for tool operations");
     }
   }
 
@@ -97,7 +100,7 @@ export class McpLifecycleClient {
     }
 
     this.currentState = "CLOSED";
-    await this.transport.close();
-    throw new StdioTransportError("PROTOCOL_ERROR", `MCP server returned an invalid ${method} result`);
+    await this.transport.close().catch(() => undefined);
+    throw new McpLifecycleError("PROTOCOL_ERROR", `MCP server returned an invalid ${method} result`);
   }
 }

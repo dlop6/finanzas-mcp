@@ -13,6 +13,7 @@ import {
   type JsonRpcParams,
   type JsonRpcRequest,
 } from "@/shared/jsonrpc";
+import { JsonRpcRemoteError, type McpRequestContext } from "./mcp-jsonrpc-transport";
 import {
   HOST_MCP_LOG_SESSION_ID,
   sanitizeJsonRpcPayload,
@@ -41,17 +42,7 @@ export class StdioTransportError extends Error {
   }
 }
 
-export class JsonRpcRemoteError<Data = unknown> extends Error {
-  constructor(
-    public readonly id: JsonRpcId | null,
-    public readonly code: number,
-    message: string,
-    public readonly data?: Data,
-  ) {
-    super(message);
-    this.name = "JsonRpcRemoteError";
-  }
-}
+export { JsonRpcRemoteError } from "./mcp-jsonrpc-transport";
 
 export interface StdioJsonRpcClientOptions {
   command: string;
@@ -64,9 +55,7 @@ export interface StdioJsonRpcClientOptions {
   logClock?: McpInteractionLogClock;
 }
 
-export type McpRequestContext = {
-  sessionId: string;
-};
+export type { McpRequestContext } from "./mcp-jsonrpc-transport";
 
 interface PendingRequest {
   method: string;
@@ -447,11 +436,12 @@ export class StdioJsonRpcClient {
     return Math.max(0, this.logClock.monotonicNow() - startedAt);
   }
 
-  private appendLog(entry: Omit<McpInteractionLogEntry, "timestamp" | "serverId">): void {
+  private appendLog(entry: Omit<McpInteractionLogEntry, "timestamp" | "serverId" | "transport">): void {
     this.interactionLogger?.append({
       ...entry,
       timestamp: this.logClock.now().toISOString(),
       serverId: this.serverId,
+      transport: "STDIO",
       payload: sanitizeJsonRpcPayload(entry.payload),
     });
   }

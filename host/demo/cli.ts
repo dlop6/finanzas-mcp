@@ -6,17 +6,17 @@ import { createContextCompactor, InMemoryConversationSessionStore, createSession
 import { createDeepSeekClient, DeepSeekClientError } from "@/host/llm";
 import { HOST_MCP_LOG_SESSION_ID } from "@/host/mcp-clients/mcp-interaction-log";
 import { createChatOrchestrator } from "@/host/orchestration/chat-orchestrator";
-import { createFinancialReportDemo, FinancialReportDemoError, startLocalMcpRuntime } from "./index";
+import { createFinancialReportDemo, FinancialReportDemoError, startHostMcpRuntime } from "./index";
 
-function displayLogs(title: string, entries: ReturnType<Awaited<ReturnType<typeof startLocalMcpRuntime>>["interactionLogs"]["listBySession"]>): void {
+function displayLogs(title: string, entries: ReturnType<Awaited<ReturnType<typeof startHostMcpRuntime>>["interactionLogs"]["listBySession"]>): void {
   stdout.write(`${title}\n`);
   for (const entry of entries) {
-    stdout.write(`${entry.timestamp} ${entry.serverId} ${entry.direction} ${entry.method ?? ""} ${String(entry.requestId ?? "")} ${entry.status}${entry.durationMs === undefined ? "" : ` ${entry.durationMs}ms`} ${entry.payload}\n`);
+    stdout.write(`${entry.timestamp} ${entry.serverId} ${entry.transport} ${entry.direction} ${entry.method ?? ""} ${String(entry.requestId ?? "")} ${entry.status}${entry.durationMs === undefined ? "" : ` ${entry.durationMs}ms`} ${entry.payload}\n`);
   }
 }
 
 async function main(): Promise<void> {
-  const runtime = await startLocalMcpRuntime();
+  const runtime = await startHostMcpRuntime();
   const readline = createInterface({ input: stdin, output: stdout });
   try {
     const deepSeekClient = createDeepSeekClient();

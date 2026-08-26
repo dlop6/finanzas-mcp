@@ -4,6 +4,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createFinanceToolRegistry } from "@/servers/finance-mcp/composition";
 import { createFinanceMcpHttpServer } from "@/servers/finance-mcp/http-server";
 import { FinanceMcpLifecycle } from "@/servers/finance-mcp/lifecycle";
+import { startFinanceMcpSession, FINANCE_MCP_REMOTE_TIMEOUT_MS } from "@/host/mcp-clients/finance-mcp-client";
+import { InMemoryMcpInteractionLogStore } from "@/host/mcp-clients/mcp-interaction-log";
 import { createHarness, fixedFinanceClock, resetFinanceTestDatabase } from "./fixtures";
 import { createTestPrisma } from "./test-prisma";
 
@@ -34,6 +36,26 @@ beforeEach(async () => resetFinanceTestDatabase(prisma));
 afterAll(async () => { server.close(); await once(server, "close").catch(() => undefined); await prisma.$disconnect(); });
 
 describe("Finance MCP Streamable HTTP with PostgreSQL", () => {
+  it("lets the Host use the remote transport contract without exposing its MCP session", async () => {
+    const logs = new InMemoryMcpInteractionLogStore();
+    const client = await startFinanceMcpSession({
+      config: { mode: "remote", endpoint: new URL(endpoint), timeoutMs: FINANCE_MCP_REMOTE_TIMEOUT_MS },
+      interactionLogger: logs,
+    });
+    try {
+      await expect(client.toolsList()).resolves.toMatchObject({ tools: expect.any(Array) });
+      await expect(client.toolsCall("get_current_balance")).resolves.toMatchObject({ structuredContent: { currentBalance: "19475.00" } });
+      const entries = logs.listBySession("HOST");
+      expect(entries).toEqual(expect.arrayContaining([
+        expect.objectContaining({ transport: "STREAMABLE_HTTP", method: "initialize", status: "SUCCEEDED" }),
+        expect.objectContaining({ transport: "STREAMABLE_HTTP", method: "tools/list", status: "SUCCEEDED" }),
+      ]));
+      expect(JSON.stringify(entries)).not.toContain("MCP-Session-Id");
+    } finally {
+      await client.close();
+    }
+  });
+
   it("returns the same catalog and results as the local lifecycle", async () => {
     const id = await session();
     const listed = await call({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }, id);

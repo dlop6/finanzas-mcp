@@ -1,14 +1,14 @@
 import "dotenv/config";
 
 import { DeepSeekClientError, createDeepSeekClient } from "@/host/llm";
-import { startFinanceMcpSessionLocal } from "@/host/mcp-clients/finance-mcp-local";
+import { startFinanceMcpSession } from "@/host/mcp-clients/finance-mcp-client";
 import { HOST_MCP_LOG_SESSION_ID } from "@/host/mcp-clients/mcp-interaction-log";
 import { registerFinanceMcpTools } from "./finance-mcp-tools";
 import { ChatOrchestrationError, createChatOrchestrator } from "./chat-orchestrator";
 import { HostMcpToolRegistry } from "./mcp-tool-registry";
 
 async function main(): Promise<void> {
-  const financeClient = await startFinanceMcpSessionLocal({ onStderr: () => undefined });
+  const financeClient = await startFinanceMcpSession({ onStderr: () => undefined });
 
   try {
     const toolRegistry = new HostMcpToolRegistry();

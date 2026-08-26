@@ -144,3 +144,20 @@ Start: npm run finance:mcp:http
 ```
 
 Render provides `PORT`. Set `MCP_HTTP_HOST=0.0.0.0` and use the Render PostgreSQL Internal Database URL as `DATABASE_URL`. Leave the HTTP health-check path empty so Render uses its default TCP check. The public endpoint has no authentication in this MVP.
+
+## Host Finance MCP mode
+
+The Host selects its Finance MCP transport when it starts:
+
+```dotenv
+FINANCE_MCP_MODE=local
+FINANCE_MCP_REMOTE_URL=https://finanzas-mcp-server.onrender.com/mcp
+```
+
+`local` is the default and starts Finance MCP through STDIO with local PostgreSQL. `remote` uses Streamable HTTP with the configured HTTPS endpoint and the Render database. There is no automatic fallback between modes; restart the Host after changing the setting. Filesystem MCP and Git MCP remain local in both modes.
+
+Validate the configured mode with a read-only request:
+
+```powershell
+npm run finance:mcp:client:smoke
+```

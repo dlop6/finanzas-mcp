@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { StdioJsonRpcClient, type StdioJsonRpcClientOptions } from "./stdio-jsonrpc-client";
 import { McpLifecycleClient } from "./mcp-lifecycle-client";
 import type { McpInteractionLogWriter } from "./mcp-interaction-log";
+import type { McpInteractionLogClock } from "./mcp-interaction-log";
 
 const WINDOWS_ENVIRONMENT_KEYS = ["PATH", "SystemRoot", "ComSpec", "PATHEXT", "TEMP", "TMP"] as const;
 const POSIX_ENVIRONMENT_KEYS = ["PATH", "TMPDIR", "LANG", "LC_ALL"] as const;
@@ -11,6 +12,7 @@ const FINANCE_MCP_ENVIRONMENT_KEYS = ["DATABASE_URL", "NODE_ENV"] as const;
 export interface StartFinanceMcpLocalOptions {
   onStderr?: StdioJsonRpcClientOptions["onStderr"];
   interactionLogger?: McpInteractionLogWriter;
+  logClock?: McpInteractionLogClock;
 }
 
 function allowlistedEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -36,6 +38,7 @@ function localFinanceMcpConfiguration(options: StartFinanceMcpLocalOptions): Std
     onStderr: options.onStderr,
     serverId: "finance-mcp",
     interactionLogger: options.interactionLogger,
+    logClock: options.logClock,
   };
 }
 

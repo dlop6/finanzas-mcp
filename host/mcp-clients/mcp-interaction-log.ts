@@ -6,11 +6,13 @@ export const INVALID_MCP_PAYLOAD = "[invalid JSON-RPC payload omitted]";
 export type McpLogDirection = "HOST_TO_MCP" | "MCP_TO_HOST";
 export type McpLogMessageType = "request" | "response" | "notification" | "error";
 export type McpLogStatus = "SENT" | "SUCCEEDED" | "REMOTE_ERROR" | "TRANSPORT_ERROR" | "PROTOCOL_ERROR";
+export type McpLogTransport = "STDIO" | "STREAMABLE_HTTP";
 
 export type McpInteractionLogEntry = {
   timestamp: string;
   sessionId: string;
   serverId: string;
+  transport: McpLogTransport;
   direction: McpLogDirection;
   messageType: McpLogMessageType;
   method?: string;
