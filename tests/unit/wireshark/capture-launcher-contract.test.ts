@@ -27,4 +27,16 @@ describe("remote Wireshark capture launcher", () => {
 
     expect(gitignore).toContain("/docs/wireshark/local/");
   });
+
+  it("adds a fixed Host-client capture mode without changing the temporary probe command", async () => {
+    const launcher = await readWorkspaceFile("scripts/wireshark/capture-remote-mcp.ps1");
+    const packageJson = await readWorkspaceFile("package.json");
+
+    expect(launcher).toContain("[switch]$HostClient");
+    expect(launcher).toContain("host-remote-mcp-probe.ts");
+    expect(launcher).toContain("host-remote-preliminary");
+    expect(launcher).toContain("GetHostAddresses");
+    expect(launcher).toContain("tcp port 443 and (");
+    expect(packageJson).toContain('"wireshark:host-remote:capture"');
+  });
 });

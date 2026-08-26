@@ -20,6 +20,16 @@ The probe performs `initialize`, `notifications/initialized`, `tools/list`, `get
 
 Local `.pcapng`, TLS key-log and tshark-log files are created under `docs/wireshark/local/`. They are intentionally ignored by Git. Delete the key log after analysis.
 
+## Capture the Host remote client
+
+UN-44 uses the production Host client rather than the temporary HTTP probe:
+
+```powershell
+npm run wireshark:host-remote:capture -- --interface 6 https://finanzas-mcp-server.onrender.com/mcp
+```
+
+It creates a separate `host-remote-preliminary-*` capture, TLS key log, and safe Host-log summary under `docs/wireshark/local/`. The launcher limits capture to the resolved endpoint IP addresses on TCP port 443. See `remote-host-preliminary-report.md` for the preliminary evidence; UN-55 will create the final capture.
+
 ## Inspect the encrypted flow
 
 Before loading the key log, use these display filters:

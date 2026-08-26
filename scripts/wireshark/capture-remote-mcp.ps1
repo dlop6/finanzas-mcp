@@ -3,7 +3,8 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$Interface,
   [Parameter(Mandatory = $true, Position = 0)]
-  [string]$Endpoint
+  [string]$Endpoint,
+  [switch]$HostClient
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,18 +35,36 @@ if (-not $node) {
 $localDirectory = Join-Path $root "docs\wireshark\local"
 New-Item -ItemType Directory -Force -Path $localDirectory | Out-Null
 $timestamp = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssZ")
-$capture = Join-Path $localDirectory "remote-mcp-$timestamp.pcapng"
-$keyLog = Join-Path $localDirectory "remote-mcp-$timestamp.keys.log"
-$stdoutLog = Join-Path $localDirectory "remote-mcp-$timestamp.tshark.stdout.log"
-$stderrLog = Join-Path $localDirectory "remote-mcp-$timestamp.tshark.stderr.log"
-$probe = Join-Path $root "scripts\wireshark\remote-mcp-probe.ts"
+$prefix = if ($HostClient) { "host-remote-preliminary" } else { "remote-mcp" }
+$capture = Join-Path $localDirectory "$prefix-$timestamp.pcapng"
+$keyLog = Join-Path $localDirectory "$prefix-$timestamp.keys.log"
+$stdoutLog = Join-Path $localDirectory "$prefix-$timestamp.tshark.stdout.log"
+$stderrLog = Join-Path $localDirectory "$prefix-$timestamp.tshark.stderr.log"
+$summary = Join-Path $localDirectory "$prefix-$timestamp.host-summary.json"
+$probeRelativePath = if ($HostClient) { "scripts\wireshark\host-remote-mcp-probe.ts" } else { "scripts\wireshark\remote-mcp-probe.ts" }
+$probe = Join-Path $root $probeRelativePath
 $captureProcess = $null
 
 try {
-  $tsharkArguments = "-q -i `"$Interface`" -f `"tcp port 443`" -a duration:8 -w `"$capture`""
+  $addresses = [System.Net.Dns]::GetHostAddresses($uri.Host) |
+    Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -or $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetworkV6 } |
+    ForEach-Object { $_.IPAddressToString } |
+    Select-Object -Unique
+  if (-not $addresses) { throw "unresolved" }
+  $captureFilter = "tcp port 443 and (" + (($addresses | ForEach-Object { "host $_" }) -join " or ") + ")"
+} catch {
+  Write-Error "Remote MCP capture failed: ENDPOINT_UNRESOLVED."
+  exit 1
+}
+
+try {
+  $durationSeconds = if ($HostClient) { 75 } else { 8 }
+  $tsharkArguments = "-q -i `"$Interface`" -f `"$captureFilter`" -a duration:$durationSeconds -w `"$capture`""
   $captureProcess = Start-Process -FilePath $tshark -ArgumentList $tsharkArguments -PassThru -NoNewWindow -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
   Start-Sleep -Seconds 1
-  & $node "--no-warnings" "--tls-keylog=$keyLog" "--import" "tsx" $probe $Endpoint
+  $nodeArguments = @("--no-warnings", "--tls-keylog=$keyLog", "--import", "tsx", $probe, $Endpoint)
+  if ($HostClient) { $nodeArguments += $summary }
+  & $node @nodeArguments
   if ($LASTEXITCODE -ne 0) { throw "probe failed" }
 } catch {
   Write-Error "Remote MCP capture failed: PROBE_OR_CAPTURE_FAILED."
@@ -60,7 +79,7 @@ try {
   }
 }
 
-if (-not (Test-Path $capture) -or (Get-Item $capture).Length -eq 0 -or -not (Test-Path $keyLog) -or (Get-Item $keyLog).Length -eq 0) {
+if (-not (Test-Path $capture) -or (Get-Item $capture).Length -eq 0 -or -not (Test-Path $keyLog) -or (Get-Item $keyLog).Length -eq 0 -or ($HostClient -and (-not (Test-Path $summary) -or (Get-Item $summary).Length -eq 0))) {
   Write-Error "Remote MCP capture failed: ARTIFACTS_MISSING."
   exit 1
 }
@@ -79,4 +98,5 @@ try {
 Write-Output "Remote MCP capture completed."
 Write-Output "Capture: $capture"
 Write-Output "TLS key log: $keyLog"
+if ($HostClient) { Write-Output "Host summary: $summary" }
 Write-Output "Capture SHA-256: $hash"
