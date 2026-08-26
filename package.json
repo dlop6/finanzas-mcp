@@ -32,6 +32,7 @@
     "deepseek:smoke": "tsx host/llm/smoke.ts",
     "orchestration:smoke": "tsx host/orchestration/smoke.ts",
     "finance:mcp:client:smoke": "tsx host/mcp-clients/finance-mcp-smoke.ts",
+    "test:finance:remote": "tsx scripts/finance/remote-validation-cli.ts",
     "finance:mcp:http": "tsx servers/finance-mcp/http.ts",
     "wireshark:remote:capture": "powershell -ExecutionPolicy Bypass -File scripts/wireshark/capture-remote-mcp.ps1",
     "git:mcp:setup": "tsx scripts/setup-git-mcp.ts",

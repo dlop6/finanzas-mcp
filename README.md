@@ -161,3 +161,13 @@ Validate the configured mode with a read-only request:
 ```powershell
 npm run finance:mcp:client:smoke
 ```
+
+## Remote Finance MCP validation
+
+Run the reproducible remote validation with `FINANCE_MCP_MODE=remote` and `FINANCE_MCP_REMOTE_URL` configured:
+
+```powershell
+npm run test:finance:remote
+```
+
+It checks the 24-tool contract, balance, 7/30-day projections, purchase viability, controlled errors, and a reversible `GTQ 1.00` income. It asks for confirmation when creating and deleting the test transaction, uses no DeepSeek or direct database access, and must finish with 20 transactions and a `19475.00` balance. This is not a load test.
