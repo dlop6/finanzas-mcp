@@ -1,18 +1,21 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, useRef, useState } from "react";
+import AssistantMarkdown from "./assistant-markdown";
+import styles from "./chat-client.module.css";
 
-type ChatMessage = {
-  id: number;
-  role: "user" | "assistant";
-  text: string;
-};
+type ChatMessage =
+  | { id: number; role: "user"; format: "plain"; text: string }
+  | { id: number; role: "assistant"; format: "markdown" | "plain"; kind: "model" | "control"; text: string };
 
-type ApiSuccess = {
-  status: "completed" | "confirmation_required" | "cancelled";
-  sessionId: string;
-  message: string;
-};
+type NewChatMessage =
+  | { role: "user"; format: "plain"; text: string }
+  | { role: "assistant"; format: "markdown" | "plain"; kind: "model" | "control"; text: string };
+
+type ApiSuccess =
+  | { status: "completed"; sessionId: string; message: string }
+  | { status: "confirmation_required"; sessionId: string; message: string }
+  | { status: "cancelled"; sessionId: string; message: string };
 
 type ApiError = {
   error: { code: string; message: string };
@@ -45,8 +48,9 @@ export default function ChatClient() {
   const [error, setError] = useState<string | null>(null);
   const nextMessageId = useRef(1);
 
-  const addMessage = (role: ChatMessage["role"], text: string) => {
-    setMessages((current) => [...current, { id: nextMessageId.current++, role, text }]);
+  const addMessage = (message: NewChatMessage) => {
+    const nextMessage: ChatMessage = { id: nextMessageId.current++, ...message };
+    setMessages((current) => [...current, nextMessage]);
   };
 
   const submit = async (event?: FormEvent<HTMLFormElement>) => {
@@ -57,7 +61,7 @@ export default function ChatClient() {
 
     setError(null);
     setStatus("sending");
-    addMessage("user", message);
+    addMessage({ role: "user", format: "plain", text: message });
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -74,7 +78,11 @@ export default function ChatClient() {
       if (isApiSuccess(body) && response.ok) {
         setSessionId(body.sessionId);
         setDraft("");
-        addMessage("assistant", body.message);
+        if (body.status === "completed") {
+          addMessage({ role: "assistant", format: "markdown", kind: "model", text: body.message });
+        } else {
+          addMessage({ role: "assistant", format: "plain", kind: "control", text: body.message });
+        }
         return;
       }
       if (isApiError(body)) {
@@ -97,35 +105,36 @@ export default function ChatClient() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-4 py-8 sm:px-8">
-      <header className="mb-8 border-b border-slate-200 pb-6">
-        <p className="text-sm font-semibold tracking-wide text-emerald-700">FINANCE MCP</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Asistente financiero</h1>
-        <p className="mt-2 max-w-2xl text-slate-600">Consulta información de tu negocio o haz una pregunta general. Las operaciones de escritura requieren confirmación.</p>
-      </header>
+    <main className={styles.page}>
+      <div className={styles.shell}>
+        <header className={styles.header}>
+          <p className={styles.eyebrow}>FINANCE MCP</p>
+          <h1 className={styles.title}>Asistente financiero</h1>
+          <p className={styles.subtitle}>Consulta información de tu negocio o haz una pregunta general. Las operaciones de escritura requieren confirmación.</p>
+        </header>
 
-      <section className="flex flex-1 flex-col" aria-label="Conversación">
-        {messages.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-600">
-            <p>Escribe una pregunta para iniciar la conversación.</p>
-          </div>
-        ) : (
-          <ol className="flex flex-1 flex-col gap-4" aria-live="polite">
+        <section className={styles.conversation} aria-label="Conversación">
+          {messages.length === 0 ? (
+            <div className={styles.emptyState}>
+              <p>Escribe una pregunta para iniciar la conversación.</p>
+            </div>
+          ) : (
+            <ol className={styles.messages} aria-live="polite">
             {messages.map((message) => (
-              <li key={message.id} className={message.role === "user" ? "flex justify-end" : "flex justify-start"}>
-                <article className={message.role === "user" ? "max-w-[85%] rounded-2xl rounded-br-sm bg-emerald-700 px-4 py-3 text-white" : "max-w-[85%] rounded-2xl rounded-bl-sm bg-white px-4 py-3 text-slate-900 shadow-sm ring-1 ring-slate-200"}>
-                  <p className="mb-1 text-xs font-semibold opacity-75">{message.role === "user" ? "Tú" : "Asistente"}</p>
-                  <p className="whitespace-pre-wrap break-words">{message.text}</p>
+              <li key={message.id} className={`${styles.messageRow} ${message.role === "user" ? styles.messageRowUser : styles.messageRowAssistant}`}>
+                <article className={`${styles.message} ${message.role === "user" ? styles.messageUser : message.kind === "control" ? styles.messageControl : styles.messageAssistant}`}>
+                  <p className={styles.messageLabel}>{message.role === "user" ? "Tú" : message.kind === "control" ? "Confirmación" : "Asistente"}</p>
+                  {message.format === "markdown" ? <AssistantMarkdown content={message.text} /> : <p className={styles.plainText}>{message.text}</p>}
                 </article>
               </li>
             ))}
-            {status === "sending" ? <li className="text-sm text-slate-500" aria-live="assertive">Pensando…</li> : null}
-          </ol>
-        )}
-      </section>
+              {status === "sending" ? <li className={styles.thinking} aria-live="assertive">Pensando…</li> : null}
+            </ol>
+          )}
+        </section>
 
-      <form className="mt-6 rounded-xl border border-slate-200 bg-white p-3 shadow-sm" onSubmit={submit}>
-        {error ? <p role="alert" className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
+        <form className={styles.composer} onSubmit={submit}>
+          {error ? <p role="alert" className={styles.error}>{error}</p> : null}
         <label className="sr-only" htmlFor="chat-message">Mensaje</label>
         <textarea
           id="chat-message"
@@ -136,15 +145,16 @@ export default function ChatClient() {
           maxLength={4000}
           rows={3}
           placeholder="Escribe tu mensaje…"
-          className="w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-slate-950 outline-none placeholder:text-slate-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100"
+          className={styles.textarea}
         />
-        <div className="mt-3 flex items-center justify-between gap-4">
-          <p className="text-xs text-slate-500">Enter para enviar · Shift+Enter para una nueva línea</p>
-          <button type="submit" disabled={status === "sending" || !draft.trim()} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400">
+          <div className={styles.composerFooter}>
+            <p className={styles.hint}>Enter para enviar · Shift+Enter para una nueva línea</p>
+            <button type="submit" disabled={status === "sending" || !draft.trim()} className={styles.sendButton}>
             Enviar
-          </button>
-        </div>
-      </form>
+            </button>
+          </div>
+        </form>
+      </div>
     </main>
   );
 }

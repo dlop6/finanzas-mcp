@@ -13,7 +13,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 describe("ChatClient", () => {
   it("shows the empty state, sends one message, and retains the returned session", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ status: "completed", sessionId: "session-1", message: "Hola, ¿en qué puedo ayudarte?" }));
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ status: "completed", sessionId: "session-1", message: "## Hola\n\n¿En qué puedo ayudarte?" }));
     vi.stubGlobal("fetch", fetchMock);
     render(<ChatClient />);
 
@@ -21,7 +21,8 @@ describe("ChatClient", () => {
     fireEvent.change(screen.getByLabelText("Mensaje"), { target: { value: "Hola" } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
-    await screen.findByText("Hola, ¿en qué puedo ayudarte?");
+    await screen.findByRole("heading", { level: 3, name: "Hola" });
+    expect(screen.getByText("¿En qué puedo ayudarte?")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith("/api/chat", expect.objectContaining({ body: JSON.stringify({ message: "Hola" }) }));
     expect(screen.getByText("Tú")).toBeTruthy();
     expect(screen.getByText("Asistente")).toBeTruthy();
@@ -68,5 +69,23 @@ describe("ChatClient", () => {
     fireEvent.submit(input.closest("form")!);
     await screen.findByRole("alert");
     expect(screen.getByRole("alert").textContent).toContain("La sesión ya no está disponible.");
+  });
+
+  it("keeps user messages and Host confirmation messages as literal text", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      status: "confirmation_required",
+      sessionId: "session-1",
+      message: "¿Confirmas **esta** operación?",
+      pendingOperation: { serverId: "finance-mcp", toolName: "record_income", arguments: {}, description: "Registrar ingreso" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ChatClient />);
+
+    fireEvent.change(screen.getByLabelText("Mensaje"), { target: { value: "**sin formato**" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+
+    await screen.findByText("¿Confirmas **esta** operación?");
+    expect(screen.queryByRole("strong", { name: "esta" })).toBeNull();
+    expect(screen.getByText("**sin formato**").tagName).toBe("P");
   });
 });
