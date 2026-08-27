@@ -1,5 +1,4 @@
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { StdioJsonRpcClient, type StdioJsonRpcClientOptions } from "./stdio-jsonrpc-client";
 import { McpLifecycleClient } from "./mcp-lifecycle-client";
 import type { McpInteractionLogWriter } from "./mcp-interaction-log";
@@ -13,6 +12,7 @@ export interface StartFinanceMcpLocalOptions {
   onStderr?: StdioJsonRpcClientOptions["onStderr"];
   interactionLogger?: McpInteractionLogWriter;
   logClock?: McpInteractionLogClock;
+  projectRoot?: string;
 }
 
 function allowlistedEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -27,8 +27,7 @@ function allowlistedEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 function localFinanceMcpConfiguration(options: StartFinanceMcpLocalOptions): StdioJsonRpcClientOptions {
-  const directory = dirname(fileURLToPath(import.meta.url));
-  const projectRoot = resolve(directory, "../..");
+  const projectRoot = resolve(options.projectRoot ?? process.cwd());
 
   return {
     command: process.execPath,

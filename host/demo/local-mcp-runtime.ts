@@ -17,8 +17,14 @@ export type HostMcpRuntime = {
   close(): Promise<void>;
 };
 
+export type HostMcpRuntimeStage = "finance" | "filesystem" | "git" | "discovery";
+
 export class HostMcpRuntimeError extends Error {
-  constructor(public readonly code: "START_FAILED" | "INVALID_CATALOG", message: string) {
+  constructor(
+    public readonly code: "START_FAILED" | "INVALID_CATALOG",
+    message: string,
+    public readonly stage: HostMcpRuntimeStage = "discovery",
+  ) {
     super(message);
     this.name = "HostMcpRuntimeError";
   }
@@ -29,6 +35,7 @@ export async function startHostMcpRuntime(
 ): Promise<HostMcpRuntime> {
   const logs = new InMemoryMcpInteractionLogStore();
   const started: McpLifecycleClient[] = [];
+  let stage: HostMcpRuntimeStage = "finance";
 
   try {
     const financeClient = await startFinanceMcpSession({
@@ -37,18 +44,21 @@ export async function startHostMcpRuntime(
       onStderr: () => undefined,
     });
     started.push(financeClient);
+    stage = "filesystem";
     const filesystemClient = await startFilesystemMcpSessionLocal({ interactionLogger: logs, onStderr: () => undefined });
     started.push(filesystemClient);
+    stage = "git";
     const gitClient = await startGitMcpSessionLocal({ interactionLogger: logs, onStderr: () => undefined });
     started.push(gitClient);
 
+    stage = "discovery";
     const registry = new HostMcpToolRegistry();
     await registerFinanceMcpTools(registry, financeClient);
     await registerFilesystemMcpTools(registry, filesystemClient);
     await registerGitMcpTools(registry, gitClient);
     const tools = registry.list();
     if (tools.length !== 50 || tools.filter((tool) => tool.isWriteOperation).length !== 24) {
-      throw new HostMcpRuntimeError("INVALID_CATALOG", "The Host MCP catalog is incomplete.");
+      throw new HostMcpRuntimeError("INVALID_CATALOG", "The Host MCP catalog is incomplete.", stage);
     }
 
     let closed = false;
@@ -67,6 +77,6 @@ export async function startHostMcpRuntime(
   } catch (error) {
     await Promise.allSettled(started.reverse().map((client) => client.close()));
     if (error instanceof HostMcpRuntimeError) throw error;
-    throw new HostMcpRuntimeError("START_FAILED", "Could not start the Host MCP runtime.");
+    throw new HostMcpRuntimeError("START_FAILED", "Could not start the Host MCP runtime.", stage);
   }
 }

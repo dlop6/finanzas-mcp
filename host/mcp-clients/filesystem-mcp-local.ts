@@ -1,19 +1,17 @@
 import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { StdioJsonRpcClient, type StdioJsonRpcClientOptions } from "./stdio-jsonrpc-client";
 import { McpLifecycleClient } from "./mcp-lifecycle-client";
 import type { McpInteractionLogWriter } from "./mcp-interaction-log";
 
 const WINDOWS_ENVIRONMENT_KEYS = ["PATH", "SystemRoot", "ComSpec", "PATHEXT", "TEMP", "TMP"] as const;
 const POSIX_ENVIRONMENT_KEYS = ["PATH", "TMPDIR", "LANG", "LC_ALL"] as const;
-const require = createRequire(import.meta.url);
-
 export const FILESYSTEM_MCP_SERVER_ID = "filesystem-mcp";
 
 export interface StartFilesystemMcpLocalOptions {
   onStderr?: StdioJsonRpcClientOptions["onStderr"];
   interactionLogger?: McpInteractionLogWriter;
+  projectRoot?: string;
 }
 
 function allowlistedEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -23,17 +21,17 @@ function allowlistedEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   ) as NodeJS.ProcessEnv;
 }
 
-export function filesystemMcpAllowedDirectory(projectRoot: string = resolve(dirname(fileURLToPath(import.meta.url)), "../..")): string {
+export function filesystemMcpAllowedDirectory(projectRoot: string = process.cwd()): string {
   return resolve(projectRoot, "docs/generated");
 }
 
 function filesystemMcpConfiguration(options: StartFilesystemMcpLocalOptions): StdioJsonRpcClientOptions {
-  const directory = dirname(fileURLToPath(import.meta.url));
-  const projectRoot = resolve(directory, "../..");
+  const projectRoot = resolve(options.projectRoot ?? process.cwd());
+  const projectRequire = createRequire(resolve(projectRoot, "package.json"));
 
   return {
     command: process.execPath,
-    args: [require.resolve("@modelcontextprotocol/server-filesystem/dist/index.js"), filesystemMcpAllowedDirectory(projectRoot)],
+    args: [projectRequire.resolve("@modelcontextprotocol/server-filesystem/dist/index.js"), filesystemMcpAllowedDirectory(projectRoot)],
     cwd: projectRoot,
     env: allowlistedEnvironment(process.env),
     onStderr: options.onStderr,

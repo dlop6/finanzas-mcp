@@ -100,7 +100,25 @@ function getGlobalManager(): WebHostRuntimeManager {
 }
 
 export function getWebHostRuntime(): Promise<WebHostRuntime> {
-  return getGlobalManager().get();
+  return getGlobalManager().get().catch((error: unknown) => {
+    const code = safeRuntimeFailureCode(error);
+    console.error(`[web-host] initialization failed: ${code}`);
+    throw error;
+  });
+}
+
+function safeRuntimeFailureCode(error: unknown): string {
+  if (typeof error !== "object" || error === null) return "UNKNOWN";
+  const value = error as { code?: unknown; stage?: unknown };
+  const code = typeof value.code === "string"
+    && ["CONFIGURATION_ERROR", "START_FAILED", "INVALID_CATALOG"].includes(value.code)
+    ? value.code
+    : "UNKNOWN";
+  const stage = typeof value.stage === "string"
+    && ["finance", "filesystem", "git", "discovery"].includes(value.stage)
+    ? value.stage
+    : "configuration";
+  return `${code}:${stage}`;
 }
 
 export async function closeWebHostRuntime(): Promise<void> {

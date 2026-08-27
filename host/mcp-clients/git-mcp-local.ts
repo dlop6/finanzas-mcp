@@ -1,5 +1,4 @@
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { StdioJsonRpcClient, type StdioJsonRpcClientOptions } from "./stdio-jsonrpc-client";
 import { McpLifecycleClient } from "./mcp-lifecycle-client";
 import type { McpInteractionLogWriter } from "./mcp-interaction-log";
@@ -23,7 +22,7 @@ function allowlistedEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 function defaultProjectRoot(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+  return resolve(process.cwd());
 }
 
 export function gitMcpDemoRepositoryPath(projectRoot: string = defaultProjectRoot()): string {
