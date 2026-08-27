@@ -62,6 +62,16 @@ npm run demo:e2e
 
 It obtains a complete financial report through Finance MCP, saves it in `docs/generated/git-demo` through Filesystem MCP, and stages and commits it through Git MCP. Writing, staging, and committing each require a separate confirmation. The demo never pushes to a remote. Its isolated automated check is available with `npm run test:e2e:local`.
 
+## Web chat
+
+After configuring DeepSeek and preparing the local MCP requirements above, start the Web chat with:
+
+```powershell
+npm run dev
+```
+
+Open the local URL shown by Next.js. The browser sends messages only to the local Host API; it never accesses DeepSeek, MCP servers, or PostgreSQL directly. A chat session lasts for the current browser tab and uses all three registered MCP servers. Finance can use either the configured local or remote mode, while Filesystem and Git MCP remain local.
+
 ## Usage
 
 Start the local Finance MCP server:
