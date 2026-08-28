@@ -88,4 +88,15 @@ describe("ChatClient", () => {
     expect(screen.queryByRole("strong", { name: "esta" })).toBeNull();
     expect(screen.getByText("**sin formato**").tagName).toBe("P");
   });
+
+  it("reports the private session only to its parent callback", async () => {
+    const onSessionIdChange = vi.fn();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ status: "completed", sessionId: "session-1", message: "Listo" })));
+    render(<ChatClient onSessionIdChange={onSessionIdChange} />);
+    fireEvent.change(screen.getByLabelText("Mensaje"), { target: { value: "hola" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+    await screen.findByText("Listo");
+    expect(onSessionIdChange).toHaveBeenCalledWith("session-1");
+    expect(document.body.textContent).not.toContain("session-1");
+  });
 });

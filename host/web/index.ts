@@ -28,8 +28,13 @@ export {
   WEB_DASHBOARD_LOG_SESSION_ID,
   WEB_DASHBOARD_TIME_ZONE,
 } from "./financial-dashboard";
+export { HOST_MCP_LOG_SESSION_ID } from "@/host/mcp-clients/mcp-interaction-log";
 export { createWebDashboardHandler } from "./web-dashboard-api";
 export type { WebDashboardErrorCode, WebDashboardErrorResponse, WebDashboardRuntimeProvider } from "./web-dashboard-api";
+export { createWebMcpLogsService } from "./mcp-logs";
+export type { WebMcpLogContext, WebMcpLogEntry, WebMcpLogGroup, WebMcpLogsResponse, WebMcpLogsService } from "./mcp-logs";
+export { createWebMcpLogsHandler } from "./web-mcp-logs-api";
+export type { WebMcpLogsErrorCode, WebMcpLogsErrorResponse, WebMcpLogsRuntimeProvider } from "./web-mcp-logs-api";
 export type {
   DashboardClock,
   DashboardDebt,

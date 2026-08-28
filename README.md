@@ -166,6 +166,10 @@ FINANCE_MCP_REMOTE_URL=https://finanzas-mcp-server.onrender.com/mcp
 
 `local` is the default and starts Finance MCP through STDIO with local PostgreSQL. `remote` uses Streamable HTTP with the configured HTTPS endpoint and the Render database. There is no automatic fallback between modes; restart the Host after changing the setting. Filesystem MCP and Git MCP remain local in both modes.
 
+## Web MCP logs
+
+The Web workspace includes a `Logs MCP` tab for inspecting sanitized in-memory MCP traffic from lifecycle/discovery, the dashboard, and the current chat tab. Logs disappear when the Host process restarts, but closing a conversation does not remove its recorded interactions. The panel never exposes other chat sessions and does not provide export, persistence, or deletion. Payloads are shown exactly as the Host recorded and sanitized them; this MVP has no authentication, so do not expose the Web Host as a public administration console.
+
 Validate the configured mode with a read-only request:
 
 ```powershell

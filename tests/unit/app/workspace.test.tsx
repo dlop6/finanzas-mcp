@@ -29,6 +29,7 @@ describe("Workspace", () => {
     await screen.findByText("Resumen financiero");
     const dashboardTab = screen.getByRole("tab", { name: "Resumen financiero" });
     const chatTab = screen.getByRole("tab", { name: "Chat" });
+    const logsTab = screen.getByRole("tab", { name: "Logs MCP" });
     expect(dashboardTab.getAttribute("aria-selected")).toBe("true");
 
     fireEvent.keyDown(dashboardTab, { key: "ArrowRight" });
@@ -40,5 +41,9 @@ describe("Workspace", () => {
     expect(dashboardTab.getAttribute("aria-selected")).toBe("true");
     fireEvent.click(chatTab);
     await waitFor(() => expect((screen.getByRole("textbox", { name: "Mensaje" }) as HTMLTextAreaElement).value).toBe("No perder este borrador"));
+
+    fireEvent.keyDown(chatTab, { key: "End" });
+    expect(logsTab.getAttribute("aria-selected")).toBe("true");
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/mcp-logs", expect.any(Object)));
   });
 });

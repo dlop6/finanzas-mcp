@@ -40,7 +40,7 @@ function isApiError(value: unknown): value is ApiError {
     && typeof (response.error as Record<string, unknown>).message === "string";
 }
 
-export default function ChatClient({ embedded = false }: { embedded?: boolean }) {
+export default function ChatClient({ embedded = false, onSessionIdChange }: { embedded?: boolean; onSessionIdChange?: (sessionId: string | null) => void }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -77,6 +77,7 @@ export default function ChatClient({ embedded = false }: { embedded?: boolean })
 
       if (isApiSuccess(body) && response.ok) {
         setSessionId(body.sessionId);
+        onSessionIdChange?.(body.sessionId);
         setDraft("");
         if (body.status === "completed") {
           addMessage({ role: "assistant", format: "markdown", kind: "model", text: body.message });
@@ -86,7 +87,10 @@ export default function ChatClient({ embedded = false }: { embedded?: boolean })
         return;
       }
       if (isApiError(body)) {
-        if (body.error.code === "SESSION_NOT_FOUND") setSessionId(null);
+        if (body.error.code === "SESSION_NOT_FOUND") {
+          setSessionId(null);
+          onSessionIdChange?.(null);
+        }
         throw new Error(body.error.message);
       }
       throw new Error("No fue posible completar la respuesta del chat.");
