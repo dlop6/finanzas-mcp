@@ -40,7 +40,7 @@ function isApiError(value: unknown): value is ApiError {
     && typeof (response.error as Record<string, unknown>).message === "string";
 }
 
-export default function ChatClient() {
+export default function ChatClient({ embedded = false }: { embedded?: boolean }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -104,14 +104,15 @@ export default function ChatClient() {
     }
   };
 
-  return (
-    <main className={styles.page}>
-      <div className={styles.shell}>
+  const content = (
+    <>
+      {!embedded ? <>
         <header className={styles.header}>
           <p className={styles.eyebrow}>FINANCE MCP</p>
           <h1 className={styles.title}>Asistente financiero</h1>
           <p className={styles.subtitle}>Consulta información de tu negocio o haz una pregunta general. Las operaciones de escritura requieren confirmación.</p>
         </header>
+      </> : null}
 
         <section className={styles.conversation} aria-label="Conversación">
           {messages.length === 0 ? (
@@ -154,7 +155,8 @@ export default function ChatClient() {
             </button>
           </div>
         </form>
-      </div>
-    </main>
+    </>
   );
+  if (embedded) return content;
+  return <main className={styles.page}><div className={styles.shell}>{content}</div></main>;
 }

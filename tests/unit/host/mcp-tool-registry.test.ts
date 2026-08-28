@@ -158,4 +158,23 @@ describe("Host MCP tool registry", () => {
       code: "SERVER_ALREADY_REGISTERED",
     });
   });
+
+  it("removes a registered server so a failed composition can recover", async () => {
+    const registry = new HostMcpToolRegistry();
+    const filesystemClient = client([tool("filesystem_read")]);
+    await registry.registerServer({
+      serverId: "filesystem-mcp",
+      client: filesystemClient,
+      metadata: { filesystem_read: { isWriteOperation: false } },
+    });
+
+    registry.unregisterServer("filesystem-mcp");
+
+    expect(registry.list()).toEqual([]);
+    await expect(registry.registerServer({
+      serverId: "filesystem-mcp",
+      client: filesystemClient,
+      metadata: { filesystem_read: { isWriteOperation: false } },
+    })).resolves.toBeUndefined();
+  });
 });

@@ -133,6 +133,15 @@ export class HostMcpToolRegistry {
     }
   }
 
+  /** Removes a server that was registered by a failed higher-level composition. */
+  unregisterServer(serverId: McpServerId): void {
+    const normalizedServerId = serverId.trim();
+    if (!normalizedServerId || !this.serverIds.delete(normalizedServerId)) return;
+    for (const [toolName, tool] of this.tools) {
+      if (tool.serverId === normalizedServerId) this.tools.delete(toolName);
+    }
+  }
+
   list(): RegisteredMcpTool[] {
     return [...this.tools.values()].map(cloneRegisteredTool);
   }

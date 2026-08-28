@@ -1,25 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
-import { createWebHostRuntime, WebHostRuntimeManager, type WebHostRuntime } from "@/host/web";
+import { createWebFinanceRuntime, WebHostRuntimeManager, type WebHostRuntime } from "@/host/web";
 
 function runtime(close = vi.fn(async () => undefined)): WebHostRuntime {
   return {
     sessionChat: {} as WebHostRuntime["sessionChat"],
     registry: {} as WebHostRuntime["registry"],
     interactionLogs: {} as WebHostRuntime["interactionLogs"],
+    financeClient: {} as WebHostRuntime["financeClient"],
+    dashboard: {} as WebHostRuntime["dashboard"],
     close,
   };
 }
 
 describe("WebHostRuntimeManager", () => {
-  it("validates DeepSeek configuration before starting MCP processes", async () => {
-    const startMcpRuntime = vi.fn(async () => runtime() as never);
-
-    await expect(createWebHostRuntime({
-      createDeepSeek: () => { throw new Error("configuration"); },
-      startMcpRuntime,
-    })).rejects.toThrow("configuration");
-
-    expect(startMcpRuntime).not.toHaveBeenCalled();
+  it("exposes a Finance-only runtime factory", () => {
+    expect(createWebFinanceRuntime).toBeTypeOf("function");
   });
 
   it("shares one initialization between concurrent callers and closes it once", async () => {

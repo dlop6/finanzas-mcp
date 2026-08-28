@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Asistente financiero | Finance MCP",
-  description: "Chat Web conectado al Host de Finance MCP.",
+  title: "Resumen financiero | Finance MCP",
+  description: "Resumen financiero y chat Web conectados al Host de Finance MCP.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

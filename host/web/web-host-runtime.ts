@@ -5,10 +5,17 @@ import {
   type SessionChatService,
 } from "@/host/context";
 import { createDeepSeekClient, type DeepSeekClient } from "@/host/llm";
-import { startHostMcpRuntime, type HostMcpRuntime } from "@/host/demo/local-mcp-runtime";
+import { startFilesystemMcpSessionLocal } from "@/host/mcp-clients/filesystem-mcp-local";
+import { startFinanceMcpSession, type StartFinanceMcpSessionOptions } from "@/host/mcp-clients/finance-mcp-client";
+import { startGitMcpSessionLocal } from "@/host/mcp-clients/git-mcp-local";
+import { InMemoryMcpInteractionLogStore, type McpInteractionLogReader, type McpInteractionLogWriter } from "@/host/mcp-clients/mcp-interaction-log";
+import type { McpLifecycleClient } from "@/host/mcp-clients/mcp-lifecycle-client";
 import { createChatOrchestrator } from "@/host/orchestration/chat-orchestrator";
-import type { HostMcpToolRegistry } from "@/host/orchestration/mcp-tool-registry";
-import type { McpInteractionLogReader } from "@/host/mcp-clients/mcp-interaction-log";
+import { FILESYSTEM_MCP_SERVER_ID, registerFilesystemMcpTools } from "@/host/orchestration/filesystem-mcp-tools";
+import { registerFinanceMcpTools } from "@/host/orchestration/finance-mcp-tools";
+import { GIT_MCP_SERVER_ID, registerGitMcpTools } from "@/host/orchestration/git-mcp-tools";
+import { HostMcpToolRegistry } from "@/host/orchestration/mcp-tool-registry";
+import { createWebFinancialDashboardService, type WebFinancialDashboardService } from "./financial-dashboard";
 
 export const WEB_HOST_SYSTEM_PROMPT = [
   "Eres un asistente de gestión financiera para una pequeña empresa.",
@@ -20,45 +27,125 @@ export const WEB_HOST_SYSTEM_PROMPT = [
   "No afirmes que una escritura se realizó antes de la confirmación explícita del Host.",
 ].join(" ");
 
-export type WebHostRuntime = {
-  sessionChat: SessionChatService;
+export type WebFinanceRuntime = {
   registry: HostMcpToolRegistry;
   interactionLogs: McpInteractionLogReader;
+  financeClient: McpLifecycleClient;
+  dashboard: WebFinancialDashboardService;
   close(): Promise<void>;
 };
 
+export type WebHostRuntime = WebFinanceRuntime & { sessionChat: SessionChatService };
+export type WebFinanceRuntimeFactory = () => Promise<WebFinanceRuntime>;
 export type WebHostRuntimeFactory = () => Promise<WebHostRuntime>;
 
-export async function createWebHostRuntime(options: {
+export type CreateWebFinanceRuntimeOptions = {
+  startFinance?: (options: StartFinanceMcpSessionOptions) => Promise<McpLifecycleClient>;
+  interactionLogger?: McpInteractionLogReader & McpInteractionLogWriter;
+};
+
+export class WebHostRuntimeError extends Error {
+  constructor(
+    public readonly code: "START_FAILED" | "INVALID_CATALOG",
+    message: string,
+    public readonly stage: "finance" | "chat" | "discovery",
+  ) {
+    super(message);
+    this.name = "WebHostRuntimeError";
+  }
+}
+
+export async function createWebFinanceRuntime(options: CreateWebFinanceRuntimeOptions = {}): Promise<WebFinanceRuntime> {
+  const logs = options.interactionLogger ?? new InMemoryMcpInteractionLogStore();
+  let financeClient: McpLifecycleClient | undefined;
+  try {
+    financeClient = await (options.startFinance ?? startFinanceMcpSession)({ interactionLogger: logs, onStderr: () => undefined });
+    const registry = new HostMcpToolRegistry();
+    await registerFinanceMcpTools(registry, financeClient);
+    const tools = registry.list();
+    if (tools.length !== 24 || tools.filter((tool) => tool.isWriteOperation).length !== 15) {
+      throw new WebHostRuntimeError("INVALID_CATALOG", "The Finance MCP catalog is incomplete.", "finance");
+    }
+    const startedFinanceClient = financeClient;
+    let closed = false;
+    return {
+      registry,
+      interactionLogs: logs,
+      financeClient,
+      dashboard: createWebFinancialDashboardService({ registry }),
+      async close() {
+        if (closed) return;
+        closed = true;
+        await startedFinanceClient.close();
+      },
+    };
+  } catch (error) {
+    await financeClient?.close().catch(() => undefined);
+    if (error instanceof WebHostRuntimeError) throw error;
+    throw new WebHostRuntimeError("START_FAILED", "Could not start the Finance MCP runtime.", "finance");
+  }
+}
+
+type ChatExtensionOptions = {
   createDeepSeek?: () => DeepSeekClient;
-  startMcpRuntime?: () => Promise<HostMcpRuntime>;
+  startFilesystem?: (options: { interactionLogger: McpInteractionLogWriter; onStderr: () => void }) => Promise<McpLifecycleClient>;
+  startGit?: (options: { interactionLogger: McpInteractionLogWriter; onStderr: () => void }) => Promise<McpLifecycleClient>;
+};
+
+export async function createWebHostRuntime(options: ChatExtensionOptions & {
+  createFinanceRuntime?: () => Promise<WebFinanceRuntime>;
 } = {}): Promise<WebHostRuntime> {
+  const financeRuntime = await (options.createFinanceRuntime ?? createWebFinanceRuntime)();
+  try {
+    return await extendWebFinanceRuntime(financeRuntime, options);
+  } catch (error) {
+    await financeRuntime.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+async function extendWebFinanceRuntime(financeRuntime: WebFinanceRuntime, options: ChatExtensionOptions): Promise<WebHostRuntime> {
   const deepSeekClient = (options.createDeepSeek ?? createDeepSeekClient)();
   const contextCompactor = createContextCompactor({ deepSeekClient });
-  const mcpRuntime = await (options.startMcpRuntime ?? startHostMcpRuntime)();
-
+  const logger = financeRuntime.interactionLogs as unknown as McpInteractionLogWriter;
+  const started: McpLifecycleClient[] = [];
   try {
-    const chatOrchestrator = createChatOrchestrator({
-      deepSeekClient,
-      toolRegistry: mcpRuntime.registry,
-    });
+    const filesystemClient = await (options.startFilesystem ?? startFilesystemMcpSessionLocal)({ interactionLogger: logger, onStderr: () => undefined });
+    started.push(filesystemClient);
+    const gitClient = await (options.startGit ?? startGitMcpSessionLocal)({ interactionLogger: logger, onStderr: () => undefined });
+    started.push(gitClient);
+    await registerFilesystemMcpTools(financeRuntime.registry, filesystemClient);
+    await registerGitMcpTools(financeRuntime.registry, gitClient);
+    const tools = financeRuntime.registry.list();
+    if (tools.length !== 50 || tools.filter((tool) => tool.isWriteOperation).length !== 24) {
+      throw new WebHostRuntimeError("INVALID_CATALOG", "The Host MCP catalog is incomplete.", "discovery");
+    }
+    const chatOrchestrator = createChatOrchestrator({ deepSeekClient, toolRegistry: financeRuntime.registry });
     const sessionChat = createSessionChatService({
       sessionStore: new InMemoryConversationSessionStore(),
       chatOrchestrator,
       contextCompactor,
     });
+    let closed = false;
     return {
+      ...financeRuntime,
       sessionChat,
-      registry: mcpRuntime.registry,
-      interactionLogs: mcpRuntime.interactionLogs,
-      close: () => mcpRuntime.close(),
+      async close() {
+        if (closed) return;
+        closed = true;
+        await Promise.allSettled([gitClient.close(), filesystemClient.close(), financeRuntime.close()]);
+      },
     };
   } catch (error) {
-    await mcpRuntime.close();
-    throw error;
+    financeRuntime.registry.unregisterServer(GIT_MCP_SERVER_ID);
+    financeRuntime.registry.unregisterServer(FILESYSTEM_MCP_SERVER_ID);
+    await Promise.allSettled(started.reverse().map((client) => client.close()));
+    if (error instanceof WebHostRuntimeError) throw error;
+    throw new WebHostRuntimeError("START_FAILED", "Could not extend the Web Host runtime.", "chat");
   }
 }
 
+/** Compatibility manager used by callers that own a complete runtime factory. */
 export class WebHostRuntimeManager {
   private runtimePromise: Promise<WebHostRuntime> | undefined;
   private runtime: WebHostRuntime | undefined;
@@ -67,16 +154,13 @@ export class WebHostRuntimeManager {
 
   get(): Promise<WebHostRuntime> {
     if (this.runtimePromise) return this.runtimePromise;
-
-    const promise = this.factory()
-      .then((runtime) => {
-        this.runtime = runtime;
-        return runtime;
-      })
-      .catch((error: unknown) => {
-        if (this.runtimePromise === promise) this.runtimePromise = undefined;
-        throw error;
-      });
+    const promise = this.factory().then((runtime) => {
+      this.runtime = runtime;
+      return runtime;
+    }).catch((error: unknown) => {
+      if (this.runtimePromise === promise) this.runtimePromise = undefined;
+      throw error;
+    });
     this.runtimePromise = promise;
     return promise;
   }
@@ -85,42 +169,78 @@ export class WebHostRuntimeManager {
     const runtime = this.runtime;
     this.runtime = undefined;
     this.runtimePromise = undefined;
-    if (runtime) await runtime.close();
+    await runtime?.close();
+  }
+}
+
+class WebRuntimeManager {
+  private financePromise: Promise<WebFinanceRuntime> | undefined;
+  private financeRuntime: WebFinanceRuntime | undefined;
+  private hostPromise: Promise<WebHostRuntime> | undefined;
+  private hostRuntime: WebHostRuntime | undefined;
+
+  getFinance(): Promise<WebFinanceRuntime> {
+    if (this.hostRuntime) return Promise.resolve(this.hostRuntime);
+    if (this.financePromise) return this.financePromise;
+    const promise = createWebFinanceRuntime().then((runtime) => {
+      this.financeRuntime = runtime;
+      return runtime;
+    }).catch((error: unknown) => {
+      if (this.financePromise === promise) this.financePromise = undefined;
+      throw error;
+    });
+    this.financePromise = promise;
+    return promise;
+  }
+
+  getHost(): Promise<WebHostRuntime> {
+    if (this.hostPromise) return this.hostPromise;
+    const promise = this.getFinance().then((financeRuntime) => extendWebFinanceRuntime(financeRuntime, {})).then((runtime) => {
+      this.hostRuntime = runtime;
+      this.financeRuntime = runtime;
+      return runtime;
+    }).catch((error: unknown) => {
+      if (this.hostPromise === promise) this.hostPromise = undefined;
+      throw error;
+    });
+    this.hostPromise = promise;
+    return promise;
+  }
+
+  async close(): Promise<void> {
+    const runtime = this.hostRuntime ?? this.financeRuntime;
+    this.hostRuntime = undefined;
+    this.hostPromise = undefined;
+    this.financeRuntime = undefined;
+    this.financePromise = undefined;
+    await runtime?.close();
   }
 }
 
 declare global {
-  var financeMcpWebHostRuntimeManager: WebHostRuntimeManager | undefined;
+  var financeMcpWebRuntimeManager: WebRuntimeManager | undefined;
   var financeMcpWebHostShutdownHooksInstalled: boolean | undefined;
 }
 
-function getGlobalManager(): WebHostRuntimeManager {
-  if (!globalThis.financeMcpWebHostRuntimeManager) {
-    globalThis.financeMcpWebHostRuntimeManager = new WebHostRuntimeManager();
-  }
-  return globalThis.financeMcpWebHostRuntimeManager;
+function getGlobalManager(): WebRuntimeManager {
+  if (!globalThis.financeMcpWebRuntimeManager) globalThis.financeMcpWebRuntimeManager = new WebRuntimeManager();
+  return globalThis.financeMcpWebRuntimeManager;
+}
+
+function reportRuntimeFailure(error: unknown): never {
+  const value = error as { code?: unknown; stage?: unknown } | undefined;
+  const code = value?.code === "START_FAILED" || value?.code === "INVALID_CATALOG" ? value.code : "UNKNOWN";
+  const stage = ["finance", "chat", "discovery"].includes(String(value?.stage)) ? String(value?.stage) : "configuration";
+  console.error(`[web-host] initialization failed: ${code}:${stage}`);
+  throw error;
+}
+
+export function getWebFinanceRuntime(): Promise<WebFinanceRuntime> {
+  return getGlobalManager().getFinance().catch(reportRuntimeFailure);
 }
 
 export function getWebHostRuntime(): Promise<WebHostRuntime> {
-  return getGlobalManager().get().catch((error: unknown) => {
-    const code = safeRuntimeFailureCode(error);
-    console.error(`[web-host] initialization failed: ${code}`);
-    throw error;
-  });
-}
-
-function safeRuntimeFailureCode(error: unknown): string {
-  if (typeof error !== "object" || error === null) return "UNKNOWN";
-  const value = error as { code?: unknown; stage?: unknown };
-  const code = typeof value.code === "string"
-    && ["CONFIGURATION_ERROR", "START_FAILED", "INVALID_CATALOG"].includes(value.code)
-    ? value.code
-    : "UNKNOWN";
-  const stage = typeof value.stage === "string"
-    && ["finance", "filesystem", "git", "discovery"].includes(value.stage)
-    ? value.stage
-    : "configuration";
-  return `${code}:${stage}`;
+  return getGlobalManager().getHost().catch(reportRuntimeFailure);
 }
 
 export async function closeWebHostRuntime(): Promise<void> {
@@ -130,9 +250,7 @@ export async function closeWebHostRuntime(): Promise<void> {
 export function installWebHostShutdownHooks(): void {
   if (globalThis.financeMcpWebHostShutdownHooksInstalled) return;
   globalThis.financeMcpWebHostShutdownHooksInstalled = true;
-  const close = () => {
-    void closeWebHostRuntime();
-  };
+  const close = () => { void closeWebHostRuntime(); };
   process.once("SIGINT", close);
   process.once("SIGTERM", close);
 }
