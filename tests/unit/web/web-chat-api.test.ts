@@ -10,7 +10,7 @@ function request(body: unknown, contentType = "application/json"): Request {
   });
 }
 
-function sessionChat(sendMessage?: SessionChatService["sendMessage"]) {
+function sessionChat(sendMessage?: SessionChatService["sendMessage"], pending = false) {
   const defaultSendMessage: SessionChatService["sendMessage"] = async () => ({
     status: "completed",
     response: { content: "Respuesta general", toolCalls: [], model: "test", finishReason: "stop" },
@@ -18,8 +18,18 @@ function sessionChat(sendMessage?: SessionChatService["sendMessage"]) {
   });
   return {
     createSession: vi.fn(() => ({ sessionId: "session-1" })),
+    getSession: vi.fn(() => ({
+      sessionId: "session-1",
+      pendingOperation: pending ? {
+        toolCallId: "internal-tool-call-id",
+        serverId: "finance-mcp",
+        toolName: "record_income",
+        arguments: { amount: "1.00" },
+        description: "Registrar un ingreso de GTQ 1.00.",
+      } : null,
+    })),
     sendMessage: vi.fn(sendMessage ?? defaultSendMessage),
-  } as unknown as Pick<SessionChatService, "createSession" | "sendMessage">;
+  } as unknown as Pick<SessionChatService, "createSession" | "getSession" | "sendMessage">;
 }
 
 describe("Web chat API", () => {
@@ -58,6 +68,57 @@ describe("Web chat API", () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ status: "confirmation_required", sessionId: "session-1" });
     expect(JSON.stringify(body)).not.toContain("internal-tool-call-id");
+  });
+
+  it("confirms only the pending operation stored by the Host", async () => {
+    const chat = sessionChat(undefined, true);
+    const handler = createWebChatHandler(async () => ({ sessionChat: chat }));
+
+    const response = await handler(request({ sessionId: "session-1", confirmationDecision: "confirm" }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "completed", sessionId: "session-1" });
+    expect(chat.getSession).toHaveBeenCalledWith("session-1");
+    expect(chat.sendMessage).toHaveBeenCalledWith("session-1", "sí");
+    expect(JSON.stringify([...((chat.sendMessage as unknown as { mock: { calls: unknown[] } }).mock.calls)])).not.toContain("record_income");
+  });
+
+  it("cancels only the pending operation stored by the Host", async () => {
+    const chat = sessionChat(async () => ({ status: "cancelled" as const, message: "Operación cancelada." }), true);
+    const handler = createWebChatHandler(async () => ({ sessionChat: chat }));
+
+    const response = await handler(request({ sessionId: "session-1", confirmationDecision: "cancel" }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "cancelled", sessionId: "session-1" });
+    expect(chat.sendMessage).toHaveBeenCalledWith("session-1", "no");
+  });
+
+  it("rejects a decision without a pending operation before DeepSeek or MCP work", async () => {
+    const chat = sessionChat();
+    const handler = createWebChatHandler(async () => ({ sessionChat: chat }));
+
+    const response = await handler(request({ sessionId: "session-1", confirmationDecision: "confirm" }));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: "CONFIRMATION_NOT_FOUND" } });
+    expect(chat.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid decision envelopes before starting the Host", async () => {
+    const getRuntime = vi.fn();
+    const handler = createWebChatHandler(getRuntime);
+
+    for (const invalid of [
+      request({ sessionId: "session-1", confirmationDecision: "confirm", message: "sí" }),
+      request({ confirmationDecision: "confirm" }),
+      request({ sessionId: "session-1", confirmationDecision: "later" }),
+      request({ sessionId: "session-1", confirmationDecision: "confirm", arguments: { amount: "1.00" } }),
+    ]) {
+      const response = await handler(invalid);
+      expect(response.status).toBe(400);
+    }
+    expect(getRuntime).not.toHaveBeenCalled();
   });
 
   it("rejects malformed, oversized, and non-JSON requests before starting the Host", async () => {

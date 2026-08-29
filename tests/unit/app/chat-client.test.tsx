@@ -84,9 +84,93 @@ describe("ChatClient", () => {
     fireEvent.change(screen.getByLabelText("Mensaje"), { target: { value: "**sin formato**" } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
-    await screen.findByText("¿Confirmas **esta** operación?");
+    await screen.findByText("Registrar ingreso");
     expect(screen.queryByRole("strong", { name: "esta" })).toBeNull();
     expect(screen.getByText("**sin formato**").tagName).toBe("P");
+  });
+
+  it("shows explicit confirmation controls and sends only the decision", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        status: "confirmation_required",
+        sessionId: "session-1",
+        message: "¿Confirmas esta operación?",
+        pendingOperation: {
+          serverId: "filesystem-mcp",
+          toolName: "write_file",
+          arguments: { path: "C:/safe/report.md", content: "<b>literal</b>" },
+          description: "Escribir el reporte solicitado.",
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ status: "completed", sessionId: "session-1", message: "Operación completada." }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ChatClient />);
+
+    fireEvent.change(screen.getByLabelText("Mensaje"), { target: { value: "Escribe el reporte" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+
+    await screen.findByText("CONFIRMACIÓN REQUERIDA");
+    expect(screen.getByText("Escribir el reporte solicitado.")).toBeTruthy();
+    expect(screen.getByText("Filesystem MCP")).toBeTruthy();
+    expect(screen.getByText("write_file")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Confirmar operación" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancelar" })).toBeTruthy();
+    expect(screen.getByLabelText("Mensaje").hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar operación" }));
+    await screen.findByText("Operación completada.");
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/chat", expect.objectContaining({
+      body: JSON.stringify({ sessionId: "session-1", confirmationDecision: "confirm" }),
+    }));
+    expect(screen.getByText("CONFIRMADA")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Confirmar operación" })).toBeNull();
+  });
+
+  it("cancels a pending operation without creating a user message", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        status: "confirmation_required",
+        sessionId: "session-1",
+        message: "¿Confirmas esta operación?",
+        pendingOperation: { serverId: "git-mcp", toolName: "git_add", arguments: { files: ["report.md"] }, description: "Agregar el reporte." },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ status: "cancelled", sessionId: "session-1", message: "Operación cancelada." }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ChatClient />);
+
+    fireEvent.change(screen.getByLabelText("Mensaje"), { target: { value: "Agrega el reporte" } });
+    fireEvent.submit(screen.getByLabelText("Mensaje").closest("form")!);
+    await screen.findByRole("button", { name: "Cancelar" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    await screen.findByText("CANCELADA");
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/chat", expect.objectContaining({
+      body: JSON.stringify({ sessionId: "session-1", confirmationDecision: "cancel" }),
+    }));
+    expect(screen.queryByText("no", { selector: "p" })).toBeNull();
+  });
+
+  it("keeps the card visible and removes its controls when the Host no longer has the pending operation", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        status: "confirmation_required",
+        sessionId: "session-1",
+        message: "¿Confirmas esta operación?",
+        pendingOperation: { serverId: "finance-mcp", toolName: "record_income", arguments: { amount: "1.00" }, description: "Registrar un ingreso." },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ error: { code: "CONFIRMATION_NOT_FOUND", message: "La operación ya no está pendiente." }, sessionId: "session-1" }, 409));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ChatClient />);
+
+    fireEvent.change(screen.getByLabelText("Mensaje"), { target: { value: "Registra un ingreso" } });
+    fireEvent.submit(screen.getByLabelText("Mensaje").closest("form")!);
+    await screen.findByRole("button", { name: "Confirmar operación" });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar operación" }));
+
+    await screen.findByRole("alert");
+    expect(screen.getByText("ESTADO NO DISPONIBLE")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Confirmar operación" })).toBeNull();
+    expect(screen.getByLabelText("Mensaje").hasAttribute("disabled")).toBe(false);
   });
 
   it("reports the private session only to its parent callback", async () => {

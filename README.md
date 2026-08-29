@@ -72,6 +72,8 @@ npm run dev
 
 Open the local URL shown by Next.js. The browser sends messages only to the local Host API; it never accesses DeepSeek, MCP servers, or PostgreSQL directly. A chat session lasts for the current browser tab and uses all three registered MCP servers. Finance can use either the configured local or remote mode, while Filesystem and Git MCP remain local.
 
+Writes in the Web chat appear as an inline confirmation card. It shows the Host-provided description and the exact arguments on demand. **Confirmar operación** executes only the pending operation retained by the Host; **Cancelar** discards it. The browser sends neither a tool name nor arguments when deciding. This shared flow protects Finance, Filesystem, and Git writes, while read-only tools execute without confirmation. There is no undo or automatic retry.
+
 ## Usage
 
 Start the local Finance MCP server:

@@ -121,6 +121,125 @@
   box-shadow: var(--nb-shadow-small);
 }
 
+.confirmationCard {
+  width: min(100%, 42rem);
+  border: var(--nb-border);
+  border-radius: var(--nb-radius-card);
+  box-shadow: var(--nb-shadow-small);
+  padding: 1rem;
+  color: var(--nb-ink);
+}
+
+.confirmationPending,
+.confirmationConfirming,
+.confirmationCancelling { background: var(--nb-yellow); }
+.confirmationConfirmed { background: var(--nb-teal); }
+.confirmationCancelled { background: var(--nb-paper); }
+.confirmationError { background: var(--nb-danger-surface); }
+
+.confirmationTitle {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.confirmationDescription {
+  margin: 0.6rem 0 0;
+  font-weight: 750;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.confirmationMetadata {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0.85rem 0;
+}
+
+.confirmationMetadata div {
+  border: 1px solid var(--nb-ink);
+  border-radius: 0.35rem;
+  background: var(--nb-paper);
+  padding: 0.45rem 0.55rem;
+}
+
+.confirmationMetadata dt {
+  color: var(--nb-muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.confirmationMetadata dd { margin: 0.2rem 0 0; font-weight: 800; overflow-wrap: anywhere; }
+.confirmationMetadata code,
+.confirmationDetails code { font-family: var(--font-geist-mono), monospace; }
+
+.confirmationWarning,
+.confirmationResult,
+.confirmationProcessing { margin: 0.75rem 0; font-size: 0.9rem; font-weight: 750; }
+
+.confirmationError {
+  margin: 0.75rem 0;
+  border: 1px solid var(--nb-ink);
+  border-radius: var(--nb-radius-control);
+  color: var(--nb-danger-ink);
+  padding: 0.55rem;
+  font-weight: 700;
+}
+
+.confirmationDetails {
+  border: var(--nb-border);
+  border-radius: var(--nb-radius-control);
+  background: var(--nb-paper);
+}
+
+.confirmationDetails summary {
+  cursor: pointer;
+  padding: 0.6rem 0.7rem;
+  font-weight: 850;
+}
+
+.confirmationDetails pre {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0;
+  border-top: var(--nb-border);
+  background: var(--nb-ink);
+  color: var(--nb-paper);
+  padding: 0.75rem;
+  font-size: 0.78rem;
+}
+
+.confirmationActions { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 0.9rem; }
+
+.confirmButton,
+.cancelButton {
+  min-height: 2.75rem;
+  border: var(--nb-border);
+  border-radius: var(--nb-radius-control);
+  box-shadow: var(--nb-shadow-small);
+  cursor: pointer;
+  padding: 0.55rem 0.9rem;
+  color: var(--nb-ink);
+  font: inherit;
+  font-weight: 900;
+}
+
+.confirmButton { background: var(--nb-pink); }
+.cancelButton { background: var(--nb-paper); }
+
+.confirmButton:hover,
+.cancelButton:hover { box-shadow: 1px 1px 0 var(--nb-ink); transform: translate(1px, 1px); }
+.confirmButton:active,
+.cancelButton:active { box-shadow: none; transform: translate(2px, 2px); }
+
+.confirmationCard :is(summary, button, h2):focus-visible {
+  outline: 3px solid var(--nb-ink);
+  outline-offset: 3px;
+}
+
 .messageLabel {
   margin: 0 0 0.45rem;
   font-size: 0.72rem;
@@ -380,8 +499,12 @@
   .composerFooter { align-items: stretch; flex-direction: column; }
   .sendButton { width: 100%; }
   .hint { text-align: center; }
+  .confirmationCard { width: 100%; }
+  .confirmationMetadata { grid-template-columns: 1fr; }
+  .confirmationActions { flex-direction: column; }
+  .confirmButton, .cancelButton { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sendButton { transition: none; }
+  .sendButton, .confirmButton, .cancelButton { transition: none; }
 }

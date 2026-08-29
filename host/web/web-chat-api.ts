@@ -7,10 +7,15 @@ import { WEB_HOST_SYSTEM_PROMPT } from "./web-host-runtime";
 
 export const WEB_CHAT_MESSAGE_MAX_LENGTH = 4_000;
 
-export type WebChatRequest = {
-  sessionId?: string;
-  message: string;
-};
+export type WebChatRequest =
+  | {
+      sessionId?: string;
+      message: string;
+    }
+  | {
+      sessionId: string;
+      confirmationDecision: "confirm" | "cancel";
+    };
 
 export type WebChatResponse =
   | { status: "completed"; sessionId: string; message: string }
@@ -31,6 +36,7 @@ export type WebChatErrorCode =
   | "INVALID_REQUEST"
   | "SESSION_NOT_FOUND"
   | "SESSION_BUSY"
+  | "CONFIRMATION_NOT_FOUND"
   | "HOST_UNAVAILABLE"
   | "CHAT_FAILED";
 
@@ -40,7 +46,7 @@ export type WebChatErrorResponse = {
 };
 
 export type WebChatRuntimeProvider = () => Promise<{
-  sessionChat: Pick<SessionChatService, "createSession" | "sendMessage">;
+  sessionChat: Pick<SessionChatService, "createSession" | "getSession" | "sendMessage">;
 }>;
 
 class WebChatRequestError extends Error {}
@@ -50,6 +56,7 @@ function errorResponse(code: WebChatErrorCode, status: number, sessionId?: strin
     INVALID_REQUEST: "La solicitud del chat no es válida.",
     SESSION_NOT_FOUND: "La sesión ya no está disponible. Envía un nuevo mensaje para iniciar otra.",
     SESSION_BUSY: "La sesión todavía está procesando un mensaje.",
+    CONFIRMATION_NOT_FOUND: "La operación ya no está pendiente. Verifica el estado antes de continuar.",
     HOST_UNAVAILABLE: "El servicio de chat no está disponible en este momento.",
     CHAT_FAILED: "No fue posible completar la respuesta del chat.",
   };
@@ -68,7 +75,18 @@ function requireObject(value: unknown): Record<string, unknown> {
 function parseRequest(value: unknown): WebChatRequest {
   const record = requireObject(value);
   const keys = Object.keys(record);
-  if (keys.some((key) => key !== "sessionId" && key !== "message")) throw new WebChatRequestError();
+  if (keys.some((key) => key !== "sessionId" && key !== "message" && key !== "confirmationDecision")) throw new WebChatRequestError();
+
+  const hasMessage = Object.hasOwn(record, "message");
+  const hasDecision = Object.hasOwn(record, "confirmationDecision");
+  if (hasMessage === hasDecision) throw new WebChatRequestError();
+
+  if (hasDecision) {
+    if (typeof record.sessionId !== "string" || !record.sessionId.trim()) throw new WebChatRequestError();
+    if (record.confirmationDecision !== "confirm" && record.confirmationDecision !== "cancel") throw new WebChatRequestError();
+    return { sessionId: record.sessionId.trim(), confirmationDecision: record.confirmationDecision };
+  }
+
   if (typeof record.message !== "string") throw new WebChatRequestError();
   const message = record.message.trim();
   if (!message || message.length > WEB_CHAT_MESSAGE_MAX_LENGTH) throw new WebChatRequestError();
@@ -76,6 +94,10 @@ function parseRequest(value: unknown): WebChatRequest {
   if (record.sessionId === undefined) return { message };
   if (typeof record.sessionId !== "string" || !record.sessionId.trim()) throw new WebChatRequestError();
   return { sessionId: record.sessionId.trim(), message };
+}
+
+function isConfirmationDecision(input: WebChatRequest): input is Extract<WebChatRequest, { confirmationDecision: "confirm" | "cancel" }> {
+  return "confirmationDecision" in input;
 }
 
 async function parseHttpRequest(request: Request): Promise<WebChatRequest> {
@@ -132,6 +154,14 @@ export function createWebChatHandler(getRuntime: WebChatRuntimeProvider): (reque
 
     let sessionId = input.sessionId;
     try {
+      if (isConfirmationDecision(input)) {
+        const decisionSessionId = input.sessionId;
+        const session = runtime.sessionChat.getSession(decisionSessionId);
+        if (!session.pendingOperation) return errorResponse("CONFIRMATION_NOT_FOUND", 409, decisionSessionId);
+        const decisionMessage = input.confirmationDecision === "confirm" ? "sí" : "no";
+        const result = await runtime.sessionChat.sendMessage(decisionSessionId, decisionMessage);
+        return Response.json(toResponse(result, decisionSessionId), { headers: { "Cache-Control": "no-store" } });
+      }
       if (!sessionId) {
         sessionId = runtime.sessionChat.createSession({ systemPrompt: WEB_HOST_SYSTEM_PROMPT }).sessionId;
       }
@@ -141,6 +171,7 @@ export function createWebChatHandler(getRuntime: WebChatRuntimeProvider): (reque
       if (error instanceof ConversationSessionError) {
         if (error.code === "SESSION_NOT_FOUND") return errorResponse("SESSION_NOT_FOUND", 404, sessionId);
         if (error.code === "SESSION_BUSY") return errorResponse("SESSION_BUSY", 409, sessionId);
+        if (error.code === "PENDING_OPERATION_NOT_FOUND") return errorResponse("CONFIRMATION_NOT_FOUND", 409, sessionId);
         if (error.code === "INVALID_USER_MESSAGE") return errorResponse("INVALID_REQUEST", 400, sessionId);
       }
       return errorResponse("CHAT_FAILED", 502, sessionId);

@@ -1,166 +1,152 @@
 "use client";
 
-import { FormEvent, KeyboardEvent, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import AssistantMarkdown from "./assistant-markdown";
+import WriteConfirmationCard, { type ConfirmationState, type PendingOperationView } from "./write-confirmation-card";
 import styles from "./chat-client.module.css";
 
-type ChatMessage =
-  | { id: number; role: "user"; format: "plain"; text: string }
-  | { id: number; role: "assistant"; format: "markdown" | "plain"; kind: "model" | "control"; text: string };
-
+type ConfirmationMessage = { id: number; role: "assistant"; format: "plain"; kind: "confirmation"; text: string; operation: PendingOperationView; confirmationState: ConfirmationState; stateMessage?: string };
+type ChatMessage = { id: number; role: "user"; format: "plain"; text: string } | { id: number; role: "assistant"; format: "markdown" | "plain"; kind: "model" | "control"; text: string } | ConfirmationMessage;
 type NewChatMessage =
   | { role: "user"; format: "plain"; text: string }
-  | { role: "assistant"; format: "markdown" | "plain"; kind: "model" | "control"; text: string };
-
+  | { role: "assistant"; format: "markdown" | "plain"; kind: "model" | "control"; text: string }
+  | Omit<ConfirmationMessage, "id">;
+type ChatRequestState = "idle" | "sending_message" | "confirming" | "cancelling";
 type ApiSuccess =
   | { status: "completed"; sessionId: string; message: string }
-  | { status: "confirmation_required"; sessionId: string; message: string }
+  | { status: "confirmation_required"; sessionId: string; message: string; pendingOperation: PendingOperationView }
   | { status: "cancelled"; sessionId: string; message: string };
+type ApiError = { error: { code: string; message: string }; sessionId?: string };
 
-type ApiError = {
-  error: { code: string; message: string };
-  sessionId?: string;
-};
+function isPendingOperation(value: unknown): value is PendingOperationView {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const operation = value as Record<string, unknown>;
+  return typeof operation.serverId === "string" && typeof operation.toolName === "string" && typeof operation.description === "string" && typeof operation.arguments === "object" && operation.arguments !== null && !Array.isArray(operation.arguments);
+}
 
 function isApiSuccess(value: unknown): value is ApiSuccess {
   if (typeof value !== "object" || value === null) return false;
   const response = value as Record<string, unknown>;
-  return (
-    (response.status === "completed" || response.status === "confirmation_required" || response.status === "cancelled")
-    && typeof response.sessionId === "string"
-    && typeof response.message === "string"
-  );
+  if (typeof response.sessionId !== "string" || typeof response.message !== "string") return false;
+  if (response.status === "completed" || response.status === "cancelled") return true;
+  return response.status === "confirmation_required" && isPendingOperation(response.pendingOperation);
 }
 
 function isApiError(value: unknown): value is ApiError {
   if (typeof value !== "object" || value === null) return false;
   const response = value as Record<string, unknown>;
-  return typeof response.error === "object" && response.error !== null
-    && typeof (response.error as Record<string, unknown>).code === "string"
-    && typeof (response.error as Record<string, unknown>).message === "string";
+  return typeof response.error === "object" && response.error !== null && typeof (response.error as Record<string, unknown>).code === "string" && typeof (response.error as Record<string, unknown>).message === "string";
+}
+
+function isConfirmationMessage(message: ChatMessage): message is ConfirmationMessage {
+  return message.role === "assistant" && "kind" in message && message.kind === "confirmation";
 }
 
 export default function ChatClient({ embedded = false, onSessionIdChange }: { embedded?: boolean; onSessionIdChange?: (sessionId: string | null) => void }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
-  const [status, setStatus] = useState<"idle" | "sending">("idle");
+  const [status, setStatus] = useState<ChatRequestState>("idle");
   const [error, setError] = useState<string | null>(null);
   const nextMessageId = useRef(1);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const requestInFlight = useRef(false);
+  const activeConfirmation = messages.find((message) => isConfirmationMessage(message) && ["pending", "confirming", "cancelling"].includes(message.confirmationState));
+  const composerBlocked = Boolean(activeConfirmation);
+
+  useEffect(() => {
+    if (!composerBlocked && status === "idle" && messages.some(isConfirmationMessage)) composerRef.current?.focus();
+  }, [composerBlocked, messages, status]);
 
   const addMessage = (message: NewChatMessage) => {
-    const nextMessage: ChatMessage = { id: nextMessageId.current++, ...message };
+    const nextMessage: ChatMessage = { id: nextMessageId.current++, ...message } as ChatMessage;
     setMessages((current) => [...current, nextMessage]);
+  };
+
+  const updateConfirmation = (id: number, update: Partial<Pick<ConfirmationMessage, "confirmationState" | "text" | "operation" | "stateMessage">>) => {
+    setMessages((current) => current.map((message) => isConfirmationMessage(message) && message.id === id ? { ...message, ...update, operation: update.operation ? structuredClone(update.operation) : message.operation } : message));
+  };
+
+  const parseResponse = async (response: Response): Promise<ApiSuccess> => {
+    let body: unknown;
+    try { body = await response.json(); } catch { throw new Error("El servidor devolvió una respuesta no válida."); }
+    if (isApiSuccess(body) && response.ok) return body;
+    if (isApiError(body)) {
+      if (body.error.code === "SESSION_NOT_FOUND") { setSessionId(null); onSessionIdChange?.(null); }
+      const safeError = new Error(body.error.message) as Error & { code?: string };
+      safeError.code = body.error.code;
+      throw safeError;
+    }
+    throw new Error("No fue posible completar la respuesta del chat.");
   };
 
   const submit = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
-    if (status === "sending") return;
+    if (requestInFlight.current || status !== "idle" || composerBlocked) return;
     const message = draft.trim();
     if (!message) return;
-
     setError(null);
-    setStatus("sending");
+    requestInFlight.current = true;
+    setStatus("sending_message");
     addMessage({ role: "user", format: "plain", text: message });
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...(sessionId ? { sessionId } : {}), message }),
-      });
-      let body: unknown;
-      try {
-        body = await response.json();
-      } catch {
-        throw new Error("El servidor devolvió una respuesta no válida.");
-      }
-
-      if (isApiSuccess(body) && response.ok) {
-        setSessionId(body.sessionId);
-        onSessionIdChange?.(body.sessionId);
-        setDraft("");
-        if (body.status === "completed") {
-          addMessage({ role: "assistant", format: "markdown", kind: "model", text: body.message });
-        } else {
-          addMessage({ role: "assistant", format: "plain", kind: "control", text: body.message });
-        }
-        return;
-      }
-      if (isApiError(body)) {
-        if (body.error.code === "SESSION_NOT_FOUND") {
-          setSessionId(null);
-          onSessionIdChange?.(null);
-        }
-        throw new Error(body.error.message);
-      }
-      throw new Error("No fue posible completar la respuesta del chat.");
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(sessionId ? { sessionId } : {}), message }) });
+      const body = await parseResponse(response);
+      setSessionId(body.sessionId);
+      onSessionIdChange?.(body.sessionId);
+      setDraft("");
+      if (body.status === "completed") addMessage({ role: "assistant", format: "markdown", kind: "model", text: body.message });
+      else if (body.status === "confirmation_required") addMessage({ role: "assistant", format: "plain", kind: "confirmation", text: body.message, operation: structuredClone(body.pendingOperation), confirmationState: "pending" });
+      else addMessage({ role: "assistant", format: "plain", kind: "control", text: body.message });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "No fue posible completar la respuesta del chat.");
-    } finally {
-      setStatus("idle");
-    }
+    } finally { requestInFlight.current = false; setStatus("idle"); }
+  };
+
+  const decide = async (message: ConfirmationMessage, decision: "confirm" | "cancel") => {
+    if (!sessionId || requestInFlight.current || status !== "idle" || message.confirmationState !== "pending") return;
+    setError(null);
+    requestInFlight.current = true;
+    setStatus(decision === "confirm" ? "confirming" : "cancelling");
+    updateConfirmation(message.id, { confirmationState: decision === "confirm" ? "confirming" : "cancelling", stateMessage: undefined });
+    try {
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, confirmationDecision: decision }) });
+      const body = await parseResponse(response);
+      setSessionId(body.sessionId);
+      onSessionIdChange?.(body.sessionId);
+      if (body.status === "completed") { updateConfirmation(message.id, { confirmationState: "confirmed" }); addMessage({ role: "assistant", format: "markdown", kind: "model", text: body.message }); }
+      else if (body.status === "cancelled") updateConfirmation(message.id, { confirmationState: "cancelled" });
+      else updateConfirmation(message.id, { confirmationState: "pending", text: body.message, operation: structuredClone(body.pendingOperation) });
+    } catch (caught) {
+      const safeError: Error & { code?: string } = caught instanceof Error
+        ? caught as Error & { code?: string }
+        : new Error("No fue posible resolver la operación.");
+      if (safeError.code === "CONFIRMATION_NOT_FOUND" || safeError.code === "SESSION_NOT_FOUND") updateConfirmation(message.id, { confirmationState: "error", stateMessage: safeError.message });
+      else updateConfirmation(message.id, { confirmationState: "pending", stateMessage: safeError.message });
+    } finally { requestInFlight.current = false; setStatus("idle"); }
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void submit();
-    }
+    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); }
   };
 
-  const content = (
-    <>
-      {!embedded ? <>
-        <header className={styles.header}>
-          <p className={styles.eyebrow}>FINANCE MCP</p>
-          <h1 className={styles.title}>Asistente financiero</h1>
-          <p className={styles.subtitle}>Consulta información de tu negocio o haz una pregunta general. Las operaciones de escritura requieren confirmación.</p>
-        </header>
-      </> : null}
-
-        <section className={styles.conversation} aria-label="Conversación">
-          {messages.length === 0 ? (
-            <div className={styles.emptyState}>
-              <p>Escribe una pregunta para iniciar la conversación.</p>
-            </div>
-          ) : (
-            <ol className={styles.messages} aria-live="polite">
-            {messages.map((message) => (
-              <li key={message.id} className={`${styles.messageRow} ${message.role === "user" ? styles.messageRowUser : styles.messageRowAssistant}`}>
-                <article className={`${styles.message} ${message.role === "user" ? styles.messageUser : message.kind === "control" ? styles.messageControl : styles.messageAssistant}`}>
-                  <p className={styles.messageLabel}>{message.role === "user" ? "Tú" : message.kind === "control" ? "Confirmación" : "Asistente"}</p>
-                  {message.format === "markdown" ? <AssistantMarkdown content={message.text} /> : <p className={styles.plainText}>{message.text}</p>}
-                </article>
-              </li>
-            ))}
-              {status === "sending" ? <li className={styles.thinking} aria-live="assertive">Pensando…</li> : null}
-            </ol>
-          )}
-        </section>
-
-        <form className={styles.composer} onSubmit={submit}>
-          {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-        <label className="sr-only" htmlFor="chat-message">Mensaje</label>
-        <textarea
-          id="chat-message"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={onKeyDown}
-          disabled={status === "sending"}
-          maxLength={4000}
-          rows={3}
-          placeholder="Escribe tu mensaje…"
-          className={styles.textarea}
-        />
-          <div className={styles.composerFooter}>
-            <p className={styles.hint}>Enter para enviar · Shift+Enter para una nueva línea</p>
-            <button type="submit" disabled={status === "sending" || !draft.trim()} className={styles.sendButton}>
-            Enviar
-            </button>
-          </div>
-        </form>
-    </>
-  );
+  const content = <>
+    {!embedded ? <header className={styles.header}><p className={styles.eyebrow}>FINANCE MCP</p><h1 className={styles.title}>Asistente financiero</h1><p className={styles.subtitle}>Consulta información de tu negocio o haz una pregunta general. Las operaciones de escritura requieren confirmación.</p></header> : null}
+    <section className={styles.conversation} aria-label="Conversación">
+      {messages.length === 0 ? <div className={styles.emptyState}><p>Escribe una pregunta para iniciar la conversación.</p></div> : <ol className={styles.messages} aria-live="polite">
+        {messages.map((message) => <li key={message.id} className={`${styles.messageRow} ${message.role === "user" ? styles.messageRowUser : styles.messageRowAssistant}`}>
+          {isConfirmationMessage(message) ? <WriteConfirmationCard messageId={message.id} operation={message.operation} state={message.confirmationState} stateMessage={message.stateMessage} onDecision={(decision) => void decide(message, decision)} /> : <article className={`${styles.message} ${message.role === "user" ? styles.messageUser : message.kind === "control" ? styles.messageControl : styles.messageAssistant}`}><p className={styles.messageLabel}>{message.role === "user" ? "Tú" : message.kind === "control" ? "Confirmación" : "Asistente"}</p>{message.format === "markdown" ? <AssistantMarkdown content={message.text} /> : <p className={styles.plainText}>{message.text}</p>}</article>}
+        </li>)}
+        {status === "sending_message" ? <li className={styles.thinking} aria-live="assertive">Pensando…</li> : null}
+      </ol>}
+    </section>
+    <form className={styles.composer} onSubmit={submit}>
+      {error ? <p role="alert" className={styles.error}>{error}</p> : null}
+      <label className="sr-only" htmlFor="chat-message">Mensaje</label>
+      <textarea ref={composerRef} id="chat-message" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={onKeyDown} disabled={status !== "idle" || composerBlocked} maxLength={4000} rows={3} placeholder="Escribe tu mensaje…" className={styles.textarea} />
+      <div className={styles.composerFooter}><p className={styles.hint}>{composerBlocked ? "Resuelve la operación pendiente para continuar." : "Enter para enviar · Shift+Enter para una nueva línea"}</p><button type="submit" disabled={status !== "idle" || composerBlocked || !draft.trim()} className={styles.sendButton}>Enviar</button></div>
+    </form>
+  </>;
   if (embedded) return content;
   return <main className={styles.page}><div className={styles.shell}>{content}</div></main>;
 }
