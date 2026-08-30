@@ -66,4 +66,28 @@ describe("McpLogsPanel", () => {
     fireEvent.click(refresh);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
+
+  it("distinguishes filters without matches from an empty log context", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { status: 200 })));
+    render(<McpLogsPanel chatSessionId={null} active />);
+    await screen.findByText("Lifecycle y discovery");
+
+    fireEvent.change(screen.getByLabelText("Servidor"), { target: { value: "git-mcp" } });
+    expect(screen.getByText("No hay eventos que coincidan con los filtros seleccionados.")).toBeTruthy();
+  });
+
+  it("announces a refresh while retaining visible log entries", async () => {
+    let resolveRefresh: ((value: Response) => void) | undefined;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(response), { status: 200 }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveRefresh = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<McpLogsPanel chatSessionId={null} active />);
+    await screen.findByText("Lifecycle y discovery");
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar" }));
+    expect(screen.getByRole("status").textContent).toContain("Actualizando logs MCP");
+    expect(screen.getByText("Lifecycle y discovery")).toBeTruthy();
+    resolveRefresh?.(new Response(JSON.stringify(response), { status: 200 }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Logs MCP actualizados"));
+  });
 });

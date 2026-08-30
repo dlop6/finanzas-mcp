@@ -44,6 +44,21 @@ describe("FinancialDashboard", () => {
     expect(screen.getAllByText("GTQ 19,475.00").length).toBeGreaterThan(0);
   });
 
+  it("announces a refresh without replacing the visible dashboard", async () => {
+    let resolveRefresh: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(dashboard), { status: 200 }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveRefresh = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<FinancialDashboard />);
+    await screen.findAllByText("GTQ 19,475.00");
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar" }));
+    expect(screen.getByRole("status").textContent).toContain("Actualizando resumen financiero");
+    expect(screen.getAllByText("GTQ 19,475.00").length).toBeGreaterThan(0);
+    resolveRefresh?.(new Response(JSON.stringify(dashboard), { status: 200 }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Resumen financiero actualizado"));
+  });
+
   it("formats money and date-only values without numeric coercion or date shifts", () => {
     expect(formatExactMoney("GTQ", "-1234567.89")).toBe("-GTQ 1,234,567.89");
     expect(formatDateOnly("2026-08-30")).toContain("2026");

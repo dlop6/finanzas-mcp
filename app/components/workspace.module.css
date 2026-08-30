@@ -9,5 +9,9 @@
 .tabs button[aria-selected="true"] { background: var(--nb-yellow); transform: translate(2px, 2px); box-shadow: none; }
 .tabs button:focus-visible { outline: 3px solid var(--nb-teal); outline-offset: 2px; }
 .chatPanel { min-height: 28rem; }
-@media (max-width: 40rem) { .shell { box-shadow: 3px 3px 0 var(--nb-ink); } .tabs { padding-inline: 0.75rem; } }
+@media (max-width: 40rem) {
+  .shell { box-shadow: 3px 3px 0 var(--nb-ink); }
+  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; padding-inline: 0.75rem; }
+  .tabs button { min-width: 0; padding-inline: 0.35rem; white-space: normal; line-height: 1.1; }
+}
 @media (prefers-reduced-motion: reduce) { .tabs button { transition: none; } }

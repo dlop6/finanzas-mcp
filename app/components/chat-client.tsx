@@ -51,17 +51,25 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
   const nextMessageId = useRef(1);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const requestInFlight = useRef(false);
+  const restoreComposerFocus = useRef(false);
   const activeConfirmation = messages.find((message) => isConfirmationMessage(message) && ["pending", "confirming", "cancelling"].includes(message.confirmationState));
   const composerBlocked = Boolean(activeConfirmation);
 
   useEffect(() => {
-    if (!composerBlocked && status === "idle" && messages.some(isConfirmationMessage)) composerRef.current?.focus();
-  }, [composerBlocked, messages, status]);
+    if (restoreComposerFocus.current && !composerBlocked && status === "idle") {
+      composerRef.current?.focus();
+      restoreComposerFocus.current = false;
+    }
+  }, [composerBlocked, status]);
 
   const addMessage = (message: NewChatMessage) => {
-    const nextMessage: ChatMessage = { id: nextMessageId.current++, ...message } as ChatMessage;
+    const id = nextMessageId.current++;
+    const nextMessage: ChatMessage = { id, ...message } as ChatMessage;
     setMessages((current) => [...current, nextMessage]);
+    return id;
   };
+
+  const removeMessage = (id: number) => setMessages((current) => current.filter((message) => message.id !== id));
 
   const updateConfirmation = (id: number, update: Partial<Pick<ConfirmationMessage, "confirmationState" | "text" | "operation" | "stateMessage">>) => {
     setMessages((current) => current.map((message) => isConfirmationMessage(message) && message.id === id ? { ...message, ...update, operation: update.operation ? structuredClone(update.operation) : message.operation } : message));
@@ -88,7 +96,7 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
     setError(null);
     requestInFlight.current = true;
     setStatus("sending_message");
-    addMessage({ role: "user", format: "plain", text: message });
+    const submittedMessageId = addMessage({ role: "user", format: "plain", text: message });
     try {
       const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(sessionId ? { sessionId } : {}), message }) });
       const body = await parseResponse(response);
@@ -99,6 +107,8 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
       else if (body.status === "confirmation_required") addMessage({ role: "assistant", format: "plain", kind: "confirmation", text: body.message, operation: structuredClone(body.pendingOperation), confirmationState: "pending" });
       else addMessage({ role: "assistant", format: "plain", kind: "control", text: body.message });
     } catch (caught) {
+      removeMessage(submittedMessageId);
+      restoreComposerFocus.current = true;
       setError(caught instanceof Error ? caught.message : "No fue posible completar la respuesta del chat.");
     } finally { requestInFlight.current = false; setStatus("idle"); }
   };
@@ -114,14 +124,14 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
       const body = await parseResponse(response);
       setSessionId(body.sessionId);
       onSessionIdChange?.(body.sessionId);
-      if (body.status === "completed") { updateConfirmation(message.id, { confirmationState: "confirmed" }); addMessage({ role: "assistant", format: "markdown", kind: "model", text: body.message }); }
-      else if (body.status === "cancelled") updateConfirmation(message.id, { confirmationState: "cancelled" });
+      if (body.status === "completed") { updateConfirmation(message.id, { confirmationState: "confirmed" }); addMessage({ role: "assistant", format: "markdown", kind: "model", text: body.message }); restoreComposerFocus.current = true; }
+      else if (body.status === "cancelled") { updateConfirmation(message.id, { confirmationState: "cancelled" }); restoreComposerFocus.current = true; }
       else updateConfirmation(message.id, { confirmationState: "pending", text: body.message, operation: structuredClone(body.pendingOperation) });
     } catch (caught) {
       const safeError: Error & { code?: string } = caught instanceof Error
         ? caught as Error & { code?: string }
         : new Error("No fue posible resolver la operación.");
-      if (safeError.code === "CONFIRMATION_NOT_FOUND" || safeError.code === "SESSION_NOT_FOUND") updateConfirmation(message.id, { confirmationState: "error", stateMessage: safeError.message });
+      if (safeError.code === "CONFIRMATION_NOT_FOUND" || safeError.code === "SESSION_NOT_FOUND") { updateConfirmation(message.id, { confirmationState: "error", stateMessage: safeError.message }); restoreComposerFocus.current = true; }
       else updateConfirmation(message.id, { confirmationState: "pending", stateMessage: safeError.message });
     } finally { requestInFlight.current = false; setStatus("idle"); }
   };
@@ -137,7 +147,7 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
         {messages.map((message) => <li key={message.id} className={`${styles.messageRow} ${message.role === "user" ? styles.messageRowUser : styles.messageRowAssistant}`}>
           {isConfirmationMessage(message) ? <WriteConfirmationCard messageId={message.id} operation={message.operation} state={message.confirmationState} stateMessage={message.stateMessage} onDecision={(decision) => void decide(message, decision)} /> : <article className={`${styles.message} ${message.role === "user" ? styles.messageUser : message.kind === "control" ? styles.messageControl : styles.messageAssistant}`}><p className={styles.messageLabel}>{message.role === "user" ? "Tú" : message.kind === "control" ? "Confirmación" : "Asistente"}</p>{message.format === "markdown" ? <AssistantMarkdown content={message.text} /> : <p className={styles.plainText}>{message.text}</p>}</article>}
         </li>)}
-        {status === "sending_message" ? <li className={styles.thinking} aria-live="assertive">Pensando…</li> : null}
+        {status === "sending_message" ? <li className={styles.thinking} role="status">Pensando…</li> : null}
       </ol>}
     </section>
     <form className={styles.composer} onSubmit={submit}>

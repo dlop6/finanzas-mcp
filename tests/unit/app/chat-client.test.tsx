@@ -69,6 +69,22 @@ describe("ChatClient", () => {
     fireEvent.submit(input.closest("form")!);
     await screen.findByRole("alert");
     expect(screen.getByRole("alert").textContent).toContain("La sesión ya no está disponible.");
+    expect(screen.queryByText("dos", { selector: ".messageUser p" })).toBeNull();
+    expect((input as HTMLTextAreaElement).value).toBe("dos");
+  });
+
+  it("removes an unconfirmed user message and preserves its draft after a recoverable send failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ error: { code: "CHAT_FAILED", message: "No fue posible completar la respuesta del chat." } }, 502)));
+    render(<ChatClient />);
+    const input = screen.getByLabelText("Mensaje");
+
+    fireEvent.change(input, { target: { value: "Mantener este mensaje" } });
+    fireEvent.submit(input.closest("form")!);
+
+    await screen.findByRole("alert");
+    expect(screen.queryByText("Mantener este mensaje", { selector: ".messageUser p" })).toBeNull();
+    expect((input as HTMLTextAreaElement).value).toBe("Mantener este mensaje");
+    expect(document.activeElement).toBe(input);
   });
 
   it("keeps user messages and Host confirmation messages as literal text", async () => {

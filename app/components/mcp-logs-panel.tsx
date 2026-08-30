@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WebMcpLogEntry, WebMcpLogsResponse } from "@/host/web";
+import StateNotice from "./state-notice";
 import styles from "./mcp-logs-panel.module.css";
 
 type PanelState =
@@ -130,14 +131,14 @@ export default function McpLogsPanel({ chatSessionId, active }: { chatSessionId:
       && (messageType === "ALL" || entry.messageType === messageType)),
   })) ?? [], [messageType, server, state.data]);
   const count = groups.reduce((total, group) => total + group.entries.length, 0);
+  const filtersActive = server !== "ALL" || messageType !== "ALL";
 
   if (state.kind === "idle" || state.kind === "loading") {
     return <section className={styles.loading} aria-busy="true" aria-live="polite"><p className="sr-only">Cargando logs MCP</p><div className={styles.skeleton} /><div className={styles.skeleton} /><div className={styles.skeleton} /></section>;
   }
-  if (state.kind === "failed") {
-    return <section className={styles.failure} role="alert"><h2>Logs no disponibles</h2><p>{state.warning}</p><button type="button" className={styles.refreshButton} onClick={() => void load()}>Intentar de nuevo</button></section>;
-  }
+  if (state.kind === "failed") return <StateNotice className={styles.failure} tone="error" role="alert" title="Logs no disponibles" message={state.warning} action={{ label: "Intentar de nuevo", onClick: () => void load() }} />;
   return <section className={styles.panel} aria-labelledby="mcp-logs-title" aria-busy={state.kind === "refreshing"}>
+    <p className="sr-only" role="status">{state.kind === "refreshing" ? "Actualizando logs MCP" : "Logs MCP actualizados"}</p>
     <div className={styles.toolbar}>
       <div><p className={styles.eyebrow}>OBSERVABILIDAD LOCAL</p><h2 id="mcp-logs-title">Logs MCP</h2><p>Interacciones sanitizadas conservadas mientras este proceso está activo.</p></div>
       <div className={styles.refreshArea}><time dateTime={state.data.generatedAt}>Actualizado: {formatTimestamp(state.data.generatedAt)}</time><button type="button" className={styles.refreshButton} onClick={() => void load()} disabled={state.kind === "refreshing"}>{state.kind === "refreshing" ? "Actualizando…" : "Actualizar"}</button></div>
@@ -150,7 +151,7 @@ export default function McpLogsPanel({ chatSessionId, active }: { chatSessionId:
     </div>
     {groups.map((group) => <section key={group.context} className={styles.group} aria-labelledby={`mcp-logs-${group.context}`}>
       <div className={styles.groupHeading}><div><p className={styles.context}>{group.context}</p><h3 id={`mcp-logs-${group.context}`}>{group.label}</h3></div><p>{group.entries.length}</p></div>
-      {group.entries.length > 0 ? <ol className={styles.entries}>{group.entries.map((entry, index) => <LogEntry key={`${entry.timestamp}-${entry.requestId ?? "notification"}-${index}`} entry={entry} />)}</ol> : <p className={styles.empty}>{group.context === "CHAT" && !chatSessionId ? "Inicia una conversación para ver sus interacciones MCP." : "Aún no hay interacciones para mostrar."}</p>}
+      {group.entries.length > 0 ? <ol className={styles.entries}>{group.entries.map((entry, index) => <LogEntry key={`${entry.timestamp}-${entry.requestId ?? "notification"}-${index}`} entry={entry} />)}</ol> : <p className={styles.empty}>{filtersActive ? "No hay eventos que coincidan con los filtros seleccionados." : group.context === "CHAT" && !chatSessionId ? "Inicia una conversación para ver sus interacciones MCP." : "Aún no hay interacciones para mostrar."}</p>}
     </section>)}
   </section>;
 }

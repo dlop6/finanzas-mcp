@@ -9,6 +9,7 @@ import type {
   DashboardSection,
   WebFinancialDashboardResponse,
 } from "@/host/web";
+import StateNotice from "./state-notice";
 import styles from "./financial-dashboard.module.css";
 
 type DashboardState =
@@ -68,10 +69,7 @@ function sectionData<T>(section: DashboardSection<T>): T | null {
 }
 
 function SectionError({ title }: { title: string }) {
-  return <section className={`${styles.card} ${styles.sectionError}`} aria-labelledby={`${title}-error`}>
-    <h2 id={`${title}-error`}>{title}</h2>
-    <p>No se pudo obtener esta información.</p>
-  </section>;
+  return <StateNotice className={`${styles.card} ${styles.sectionError}`} tone="error" title={title} message="No se pudo obtener esta información." />;
 }
 
 function ExpandableList<T>({
@@ -154,7 +152,8 @@ function ProjectionCard({ section, title }: { section: DashboardSection<Dashboar
 function DashboardContent({ data, warning, onRefresh, refreshing }: { data: WebFinancialDashboardResponse; warning: string | null; onRefresh: () => void; refreshing: boolean }) {
   const balance = sectionData(data.balance);
   const flow = sectionData(data.monthlyCashFlow);
-  return <div className={styles.dashboard}>
+  return <div className={styles.dashboard} aria-busy={refreshing}>
+    <p className="sr-only" role="status">{refreshing ? "Actualizando resumen financiero" : "Resumen financiero actualizado"}</p>
     <div className={styles.toolbar}>
       <div><p className={styles.eyebrow}>FINANCE MCP</p><h2>Resumen financiero</h2><p>Acumulado del 1 al <time dateTime={data.period.endDate}>{formatDateOnly(data.period.endDate)}</time>.</p></div>
       <div className={styles.refreshArea}><time dateTime={data.generatedAt}>Actualizado: {formatUpdated(data.generatedAt)}</time><button type="button" className={styles.refreshButton} onClick={onRefresh} disabled={refreshing}>{refreshing ? "Actualizando…" : "Actualizar"}</button></div>
@@ -197,6 +196,6 @@ export default function FinancialDashboard() {
     return () => { active = false; };
   }, []);
   if (state.kind === "loading") return <DashboardSkeleton />;
-  if (state.kind === "failed") return <section className={styles.failure} role="alert"><h2>Resumen no disponible</h2><p>{state.warning}</p><button type="button" className={styles.refreshButton} onClick={() => void load()}>Intentar de nuevo</button></section>;
+  if (state.kind === "failed") return <StateNotice className={styles.failure} tone="error" role="alert" title="Resumen no disponible" message={state.warning} action={{ label: "Intentar de nuevo", onClick: () => void load() }} />;
   return <DashboardContent data={state.data} warning={state.warning} onRefresh={() => void load()} refreshing={state.kind === "refreshing"} />;
 }

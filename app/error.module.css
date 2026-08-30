@@ -1,0 +1,8 @@
+.page {
+  display: grid;
+  min-height: 100svh;
+  place-items: center;
+  padding: 1rem;
+}
+
+.notice { width: min(100%, 40rem); }

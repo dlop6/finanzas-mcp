@@ -12,6 +12,12 @@
   --nb-danger-surface: #ffe2e8;
   --nb-danger-ink: #7f1235;
   --nb-disabled: #d8d0c8;
+  --nb-state-neutral: var(--nb-paper);
+  --nb-state-progress: var(--nb-yellow);
+  --nb-state-success: var(--nb-teal);
+  --nb-state-risk: var(--nb-pink);
+  --nb-state-error: var(--nb-danger-surface);
+  --nb-focus: var(--nb-yellow);
   --nb-border: 2px solid var(--nb-ink);
   --nb-shadow: 4px 4px 0 var(--nb-ink);
   --nb-shadow-small: 2px 2px 0 var(--nb-ink);
