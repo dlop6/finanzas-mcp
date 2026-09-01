@@ -76,8 +76,8 @@ describe("remote Finance MCP validation helpers", () => {
 
   it("runs the complete reversible validation with injected remote dependencies", async () => {
     const tools = createFinanceToolRegistry({} as PrismaClient).list();
-    let created = false;
-    let description = "";
+    let created = true;
+    let description = `${REMOTE_MUTATION_DESCRIPTION_PREFIX} stale`;
     const client = {
       state: "READY",
       toolsList: vi.fn(async () => ({ tools })),
@@ -96,7 +96,7 @@ describe("remote Finance MCP validation helpers", () => {
     } as unknown as RemoteFinanceValidationClient;
     const logs = new InMemoryMcpInteractionLogStore();
     logs.append({ timestamp: "2026-08-25T00:00:00.000Z", sessionId: "HOST", serverId: "finance-mcp", transport: "STREAMABLE_HTTP", direction: "HOST_TO_MCP", messageType: "request", method: "initialize", requestId: 1, payload: "{}", status: "SENT" });
-    const answers = ["sí", "sí"];
+    const answers = ["sí", "sí", "sí"];
     const output: string[] = [];
 
     await runRemoteFinanceValidation({
@@ -110,6 +110,8 @@ describe("remote Finance MCP validation helpers", () => {
 
     expect(client.close).toHaveBeenCalledOnce();
     expect(output).toEqual(expect.arrayContaining(["contract: passed", "confirmed creation: passed", "confirmed cleanup: passed"]));
+    expect(client.toolsCall).toHaveBeenCalledWith("delete_transaction", { transactionId: 21 });
+    expect((client.toolsCall as ReturnType<typeof vi.fn>).mock.calls.filter(([name]) => name === "delete_transaction")).toHaveLength(2);
     expect(created).toBe(false);
   });
 });

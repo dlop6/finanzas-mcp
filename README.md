@@ -187,3 +187,13 @@ npm run test:finance:remote
 ```
 
 It checks the 24-tool contract, balance, 7/30-day projections, purchase viability, controlled errors, and a reversible `GTQ 1.00` income. It asks for confirmation when creating and deleting the test transaction, uses no DeepSeek or direct database access, and must finish with 20 transactions and a `19475.00` balance. This is not a load test.
+
+## Final regression
+
+Run the local automated final regression with:
+
+```powershell
+npm run test:e2e:regression
+```
+
+It prepares the isolated Git MCP environment and runs the local MCP, confirmation, Finance → Filesystem → Git, type, lint, and build checks. It does not contact Render or use DeepSeek. The full final matrix, manual Web checks, remote reversible validation instructions, and safe-evidence rules are in `docs/evidence/un-52-e2e-regression.md`.

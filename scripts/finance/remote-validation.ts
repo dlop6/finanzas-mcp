@@ -268,6 +268,18 @@ export async function runRemoteFinanceValidation(dependencies: RemoteFinanceVali
     compareFinanceToolContracts(expected, discovered);
     output("contract: passed");
 
+    scenario = "stale cleanup";
+    let transactionData = await listRemoteTransactions(client);
+    const ownedTransactions = transactionData.filter((transaction) => transaction.description?.startsWith(REMOTE_MUTATION_DESCRIPTION_PREFIX));
+    if (ownedTransactions.length > 0) {
+      if (!prompt) throw new RemoteFinanceValidationError("CONFIRMATION_REQUIRED");
+      await recoverOwnedTransactions(client, ownedTransactions, prompt);
+      transactionData = await listRemoteTransactions(client);
+      if (transactionData.some((transaction) => transaction.description?.startsWith(REMOTE_MUTATION_DESCRIPTION_PREFIX))) {
+        throw new RemoteFinanceValidationError("REMOTE_CLEANUP_FAILED");
+      }
+    }
+
     scenario = "initial balance";
     const balance = await client.toolsCall("get_current_balance");
     if (balance.isError || !balance.structuredContent) throw new RemoteFinanceValidationError("REMOTE_READ_FAILED");
@@ -281,15 +293,6 @@ export async function runRemoteFinanceValidation(dependencies: RemoteFinanceVali
     const accountExpenses = balanceData.accounts.reduce((total, account) => total.plus(money(account.expenses ?? "", "accountExpenses")), new Prisma.Decimal(0));
     const accountDerivedBalance = balanceData.accounts.reduce((total, account) => total.plus(money(account.initialBalance ?? "", "initialBalance")).plus(money(account.income ?? "", "accountIncome")).minus(money(account.expenses ?? "", "accountExpenses")), new Prisma.Decimal(0));
     if (!accountIncome.equals(money(balanceData.totalIncome ?? "", "totalIncome")) || !accountExpenses.equals(money(balanceData.totalExpenses ?? "", "totalExpenses")) || !accountDerivedBalance.equals(money(balanceData.currentBalance ?? "", "currentBalance"))) throw new RemoteFinanceValidationError("REMOTE_READ_FAILED");
-    let transactionData = await listRemoteTransactions(client);
-    const ownedTransactions = transactionData.filter((transaction) => transaction.description?.startsWith(REMOTE_MUTATION_DESCRIPTION_PREFIX));
-    if (ownedTransactions.length > 0) {
-      scenario = "stale cleanup";
-      if (!prompt) throw new RemoteFinanceValidationError("CONFIRMATION_REQUIRED");
-      await recoverOwnedTransactions(client, ownedTransactions, prompt);
-      transactionData = await listRemoteTransactions(client);
-      if (transactionData.some((transaction) => transaction.description?.startsWith(REMOTE_MUTATION_DESCRIPTION_PREFIX))) throw new RemoteFinanceValidationError("REMOTE_CLEANUP_FAILED");
-    }
     if (transactionData.length !== 20) throw new RemoteFinanceValidationError("REMOTE_STATE_MISMATCH");
     const incomeReference = transactionData.find((transaction) => transaction.type === "INCOME" && Number.isInteger(transaction.accountId) && Number.isInteger(transaction.categoryId));
     if (!incomeReference || typeof incomeReference.accountId !== "number" || typeof incomeReference.categoryId !== "number") throw new RemoteFinanceValidationError("REMOTE_STATE_MISMATCH");
