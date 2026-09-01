@@ -1687,7 +1687,65 @@ The 15 tools classified as **Write** require explicit user confirmation in the H
 
 The nine **Read** tools do not require confirmation. Every direct write example in this document represents an already authorized call. `isWriteOperation` is registry metadata for Host orchestration and is never exposed through MCP `tools/list`.
 
-## 16. MVP boundaries
+## 16. Final transports and deployment
+
+Finance MCP exposes one catalog and one lifecycle through two transports. Tool names, descriptions, `inputSchema` values, result shapes, domain errors, and financial rules in this document are identical for both transports.
+
+| Transport | Use | Endpoint or entrypoint | Session handling |
+|---|---|---|---|
+| STDIO | Local Finance MCP child process | `node --import tsx servers/finance-mcp/stdio.ts` | One lifecycle per process connection. One compact JSON-RPC message per input line. |
+| Streamable HTTP | Local HTTP development or remote Host mode | `POST /mcp` | One in-memory lifecycle per `MCP-Session-Id`. |
+
+### 16.1 Streamable HTTP MCP
+
+The HTTP transport implements MCP `2025-11-25`. The local default is `http://127.0.0.1:3001/mcp`; start it with `npm run finance:mcp:http`. The public Render deployment currently uses:
+
+```text
+https://finanzas-mcp-server.onrender.com/mcp
+```
+
+For `POST /mcp`, send `Content-Type: application/json` and an `Accept` header that includes both `application/json` and `text/event-stream`. A successful `initialize` response has HTTP `200`, JSON-RPC content, and an `MCP-Session-Id` response header. Every later notification, `tools/list`, and `tools/call` request must include both that session header and:
+
+```text
+MCP-Protocol-Version: 2025-11-25
+```
+
+Accepted notifications return `202` without a body; JSON-RPC requests return `200` JSON. `DELETE /mcp` with the same session and protocol headers closes that session and returns `204`. `GET /mcp` returns `405`: this server does not send SSE events or server-initiated requests.
+
+Malformed JSON and invalid envelopes return HTTP `400` with their normal JSON-RPC error. Unsupported content type, unacceptable `Accept`, oversized bodies, unknown routes, and unknown sessions return `415`, `406`, `413`, `404`, and `404` respectively. The server validates explicit Origins against `MCP_ALLOWED_ORIGINS`; omitted Origin is allowed for server-to-server clients. It does not provide authentication, persistence, WebSockets, HTTP+SSE compatibility, retries, or resume support.
+
+### 16.2 Remote Host configuration
+
+The Host selects Finance MCP independently from Filesystem and Git MCP:
+
+```dotenv
+FINANCE_MCP_MODE=remote
+FINANCE_MCP_REMOTE_URL=https://finanzas-mcp-server.onrender.com/mcp
+```
+
+`remote` requires an HTTPS URL whose path is exactly `/mcp`, without credentials, query, or fragment. It uses a 60-second timeout and never falls back to local STDIO. In `local` mode, Finance MCP uses STDIO and local PostgreSQL; Filesystem and Git MCP remain local in both modes. The remote deployment uses Render's internal PostgreSQL URL as `DATABASE_URL`; an external Render URL is only for the guarded `db:remote:setup` command and is never part of MCP traffic.
+
+## 17. Chatbot and Host examples
+
+The chatbot never talks to Finance MCP directly. The Host completes `initialize`, `notifications/initialized`, and `tools/list`, then routes a model-requested read or an already-confirmed write to the registered `finance-mcp` client. Finance values remain structured MCP results until the model explains them.
+
+### 17.1 Read example
+
+For a user message such as `What is my current balance?`, the Host may issue this valid call after discovery:
+
+```json
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_current_balance","arguments":{}}}
+```
+
+The result has `content` with a concise text message and `structuredContent` containing `currency`, `currentBalance`, `totalIncome`, `totalExpenses`, and the account breakdown described in section 12.1. The model may explain those canonical values but must not recompute them.
+
+### 17.2 Write example
+
+For a user request to record income, the model can request `record_income` with a valid schema. The Host stores the exact proposed call and presents it for explicit confirmation. Only after the user confirms does the Host send `tools/call`; cancellation discards the stored operation and causes no Finance MCP write. The browser confirmation request contains only a session identifier and `confirm` or `cancel`, never the tool name or arguments.
+
+The same policy applies to every Write tool in section 5. Reads execute without a confirmation. Finance MCP itself validates and executes an already authorized call; it does not conduct a confirmation conversation.
+
+## 18. MVP boundaries
 
 The local Finance MCP intentionally excludes:
 
