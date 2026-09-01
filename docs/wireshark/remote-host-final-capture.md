@@ -75,6 +75,6 @@ tcp.stream == 1
 
 ## Handoff to UN-56 and UN-57
 
-This ticket establishes final capture completeness and safe Host correlation. UN-56 will classify the captured JSON-RPC/MCP messages, and UN-57 will document the final analysis by link, network, transport, TLS, and application layers.
+This ticket establishes final capture completeness and safe Host correlation. UN-56 classifies the captured JSON-RPC/MCP messages in `final-mcp-message-classification.md`, and UN-57 documents the link, network, transport, TLS, and application evidence in `final-remote-layer-analysis.md`.
 
-Keep the matching TLS key log and `.pcapng` local until those two follow-up tickets have completed. They are intentionally ignored by Git and must never be committed. The key log should be deleted only after their analysis is complete; deleting it is irreversible.
+The matching TLS key log and `.pcapng` remained local until those two follow-up tickets completed. They are intentionally ignored by Git and were never committed. The TLS key log is deleted after the analysis; that deletion is irreversible. The `.pcapng` and safe Host summary remain local evidence linked to this report by their hashes.

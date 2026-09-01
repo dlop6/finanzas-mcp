@@ -67,4 +67,4 @@ The decrypted stream should contain the lifecycle, tool discovery and read-only 
 
 ## Evidence
 
-`remote-capture-report.md` records the temporary-probe evidence, `remote-host-preliminary-report.md` records UN-44, and `remote-host-final-capture.md` records the final UN-55 capture. `final-mcp-message-classification.md` classifies the final MCP and JSON-RPC exchange for UN-56. Each report contains only safe metadata, filters, findings, and hashes; captures and key logs are not committed.
+`remote-capture-report.md` records the temporary-probe evidence, `remote-host-preliminary-report.md` records UN-44, and `remote-host-final-capture.md` records the final UN-55 capture. `final-mcp-message-classification.md` classifies the final MCP and JSON-RPC exchange for UN-56, while `final-remote-layer-analysis.md` documents the UN-57 link, network, transport, TLS, and application-layer evidence. Each report contains only safe metadata, filters, findings, and hashes; captures and key logs are not committed.
