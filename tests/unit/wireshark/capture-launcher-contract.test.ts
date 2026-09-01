@@ -39,4 +39,15 @@ describe("remote Wireshark capture launcher", () => {
     expect(launcher).toContain("tcp port 443 and (");
     expect(packageJson).toContain('"wireshark:host-remote:capture"');
   });
+
+  it("provides an isolated final Host-client mode with final artifact names and hashes", async () => {
+    const launcher = await readWorkspaceFile("scripts/wireshark/capture-remote-mcp.ps1");
+    const packageJson = await readWorkspaceFile("package.json");
+
+    expect(launcher).toContain("[switch]$FinalHostClient");
+    expect(launcher).toContain("host-remote-final");
+    expect(launcher).toContain("FINAL_MODE_CONFLICT");
+    expect(launcher).toContain("Host summary SHA-256");
+    expect(packageJson).toContain('"wireshark:host-remote:final-capture"');
+  });
 });

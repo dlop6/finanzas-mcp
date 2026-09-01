@@ -36,6 +36,7 @@
     "finance:mcp:http": "tsx servers/finance-mcp/http.ts",
     "wireshark:remote:capture": "powershell -ExecutionPolicy Bypass -File scripts/wireshark/capture-remote-mcp.ps1",
     "wireshark:host-remote:capture": "powershell -ExecutionPolicy Bypass -File scripts/wireshark/capture-remote-mcp.ps1 -HostClient",
+    "wireshark:host-remote:final-capture": "powershell -ExecutionPolicy Bypass -File scripts/wireshark/capture-remote-mcp.ps1 -FinalHostClient",
     "git:mcp:setup": "tsx scripts/setup-git-mcp.ts",
     "test:git:integration": "vitest run --config vitest.git.config.mts",
     "demo:e2e": "tsx host/demo/cli.ts",
