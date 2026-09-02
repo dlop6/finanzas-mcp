@@ -24,23 +24,52 @@ La validación incluyó pruebas unitarias, integraciones con PostgreSQL efímero
 
 El objetivo general consiste en implementar y validar un Host que coordine servidores MCP locales y remotos mediante un protocolo estándar, con un caso de uso financiero y una interfaz Web.
 
-Los objetivos específicos incluyen implementar JSON-RPC y el lifecycle MCP de forma manual, definir una especificación pública de Finance MCP, integrar servidores oficiales de Filesystem y Git, conservar contexto conversacional por pestaña, registrar interacciones MCP sanitizadas y demostrar la comunicación remota mediante una captura de red.
+Los objetivos específicos son los siguientes.
 
-El alcance corresponde a un MVP. La interfaz ofrece un dashboard de solo lectura, chat, logs MCP y confirmaciones explícitas. Finance MCP funciona localmente mediante STDIO y remotamente mediante Streamable HTTP. Filesystem MCP y Git MCP permanecen locales y restringidos a directorios aislados.
+- Implementar JSON-RPC y el lifecycle MCP de forma manual.
+- Definir una especificación pública para Finance MCP.
+- Integrar servidores oficiales de Filesystem y Git.
+- Conservar contexto conversacional por pestaña y registrar interacciones MCP sanitizadas.
+- Demostrar la comunicación remota mediante una captura de red.
 
-Quedan fuera del alcance autenticación, alta disponibilidad, sincronización entre bases locales y remotas, reintentos automáticos, fallback de transporte, SSE, exportación financiera en PDF y operaciones Git remotas. Estas exclusiones reducen superficie de riesgo y mantienen el proyecto centrado en la interoperabilidad MCP.
+El alcance del MVP incluye los siguientes componentes.
+
+- Dashboard financiero de solo lectura.
+- Chat con contexto por pestaña.
+- Logs MCP sanitizados y confirmaciones explícitas.
+- Finance MCP local por STDIO y remoto por Streamable HTTP.
+- Filesystem MCP y Git MCP locales con directorios aislados.
+
+Quedan fuera del alcance los siguientes elementos.
+
+- Autenticación y alta disponibilidad.
+- Sincronización entre bases locales y remotas.
+- Reintentos automáticos, fallback de transporte y SSE.
+- Exportación financiera en PDF y operaciones Git remotas.
+
+Estas exclusiones reducen superficie de riesgo y mantienen el proyecto centrado en la interoperabilidad MCP.
 
 <!-- pagebreak -->
 
 # Arquitectura del sistema
 
-La arquitectura separa la interfaz, la coordinación, los servidores MCP y la persistencia. El navegador se comunica únicamente con Route Handlers de Next.js. El Host crea clientes MCP, descubre sus catálogos y enruta cada tool al cliente propietario. El cliente DeepSeek interpreta mensajes y solicita tools cuando se requiere información externa. No obtiene acceso directo a Prisma, PostgreSQL ni a transportes MCP.
+La arquitectura separa la interfaz, la coordinación, los servidores MCP y la persistencia.
 
-Finance MCP es la autoridad para reglas financieras y persistencia. Prisma comunica el servidor con PostgreSQL. Las respuestas financieras estructuradas se devuelven al Host sin exponer modelos internos ni detalles de conexión. El Host aplica confirmaciones a todas las escrituras de Finance, Filesystem y Git. El navegador envía una decisión de confirmación, nunca reenvía argumentos de la tool.
+- El navegador se comunica únicamente con Route Handlers de Next.js.
+- El Host crea clientes MCP, descubre catálogos y enruta cada tool al cliente propietario.
+- DeepSeek interpreta mensajes y solicita tools cuando se requiere información externa.
+- Finance MCP mantiene la autoridad sobre reglas financieras y persistencia.
+- Prisma comunica Finance MCP con PostgreSQL.
+- El Host exige confirmación para toda escritura de Finance, Filesystem y Git.
+- El navegador envía una decisión de confirmación y nunca reenvía argumentos de una tool.
 
 La composición Web es progresiva. El dashboard inicia solamente Finance MCP. La apertura del chat extiende el runtime con DeepSeek, Filesystem MCP y Git MCP. Los logs MCP se conservan en memoria del proceso y se agrupan por lifecycle, dashboard y conversación actual. Esta separación evita que una consulta de dashboard dependa de la configuración del modelo o de servidores locales no financieros.
 
-La selección de Finance MCP conserva el mismo identificador lógico y catálogo público. El modo local utiliza un proceso hijo y STDIO. El modo remoto utiliza un cliente Streamable HTTP hacia el endpoint público. La base de datos de cada modo es independiente.
+La selección de Finance MCP conserva el mismo identificador lógico y catálogo público.
+
+- El modo local usa un proceso hijo y STDIO.
+- El modo remoto usa un cliente Streamable HTTP hacia el endpoint público.
+- La persistencia local y remota es independiente.
 
 <!-- landscape-figure: docs/architecture/project-architecture-complete.png | Figura 1. Arquitectura completa del proyecto | Fuente: documentación de arquitectura del repositorio. -->
 
@@ -91,9 +120,20 @@ La especificación completa, los schemas y las reglas de error se conservan en `
 
 # Transportes, endpoints y configuración
 
-El modo local utiliza STDIO. Cada mensaje JSON-RPC compacto se intercambia por la entrada y salida estándar del proceso Finance MCP. Este modo elimina tráfico de red y se utiliza junto con PostgreSQL local. El Host conserva un cliente STDIO y registra el transporte como `STDIO`.
+El modo local utiliza STDIO.
 
-El modo remoto utiliza Streamable HTTP. El endpoint público es `https://finanzas-mcp-server.onrender.com/mcp`. La versión MCP es `2025-11-25`. `POST /mcp` transporta `initialize`, `notifications/initialized`, `tools/list` y `tools/call`. `DELETE /mcp` cierra la sesión remota. El servidor responde con 200 para requests exitosas, 202 para la aceptación de la notification y 204 para el cierre. La implementación anuncia JSON y event stream en `Accept`, pero no usa SSE porque el servidor no inicia mensajes hacia el cliente.
+- Cada mensaje JSON-RPC compacto se intercambia por la entrada y salida estándar.
+- El modo local elimina tráfico de red y usa PostgreSQL local.
+- El Host registra el transporte como `STDIO`.
+
+El modo remoto utiliza Streamable HTTP.
+
+- El endpoint público es `https://finanzas-mcp-server.onrender.com/mcp`.
+- La versión MCP es `2025-11-25`.
+- `POST /mcp` transporta lifecycle, discovery y tool calls.
+- `DELETE /mcp` cierra la sesión remota.
+- Los status 200, 202 y 204 representan request exitosa, aceptación de notification y cierre.
+- La implementación no usa SSE porque el servidor no inicia mensajes hacia el cliente.
 
 Después de `initialize`, las requests remotas incluyen los nombres de header `MCP-Session-Id` y `MCP-Protocol-Version`. Sus valores no se exponen en código versionado, logs Web ni documentación. La configuración selecciona el modo mediante `FINANCE_MCP_MODE`. El endpoint remoto se valida como HTTPS con la ruta exacta `/mcp`. Un fallo remoto no activa un fallback local.
 
@@ -123,17 +163,33 @@ resultado pendiente de confirmación del Host
 
 # Interfaz Web y controles HCI
 
-La interfaz Web reúne tres vistas. El dashboard financiero presenta consultas de solo lectura. El chat mantiene contexto dentro de una pestaña. El panel Logs MCP presenta payloads sanitizados de lifecycle, dashboard y conversación actual. Las tres vistas usan la misma instancia financiera cuando el proceso ya la inicializó.
+La interfaz Web reúne tres vistas.
+
+- Dashboard financiero para consultas de solo lectura.
+- Chat con contexto dentro de una pestaña.
+- Logs MCP con payloads sanitizados de lifecycle, dashboard y conversación actual.
 
 Las respuestas completadas del modelo aceptan CommonMark y GFM mediante un renderer seguro. Los mensajes de usuario, errores y controles del Host permanecen como texto plano. HTML crudo, imágenes remotas y protocolos de enlace peligrosos no se interpretan. Las confirmaciones de escritura se muestran como tarjetas inline con descripción, servidor, tool y argumentos colapsables.
 
-La navegación usa tabs accesibles, foco visible y controles con etiquetas. Los estados de carga, actualización y error permanecen visibles. El sistema visual utiliza contraste, bordes definidos y jerarquía tipográfica para separar dashboard, conversación, logs y confirmaciones. La interfaz no accede directamente a DeepSeek, MCP, Prisma ni PostgreSQL.
+Los controles de usabilidad incluyen los siguientes elementos.
+
+- Tabs accesibles, foco visible y etiquetas claras.
+- Estados de carga, actualización y error visibles.
+- Contraste, bordes definidos y jerarquía tipográfica.
+- Separación estricta entre UI, Host, MCP, Prisma y PostgreSQL.
 
 # Verificación y calidad
 
-La calidad se validó mediante pruebas unitarias, integraciones de Finance MCP con PostgreSQL efímero, integración HTTP, pruebas de Git MCP y un escenario local completo. La matriz final confirmó lifecycle, discovery, operaciones de lectura, validación de errores, confirmaciones y límites de sandbox. El escenario Finance a Filesystem a Git requiere tres confirmaciones independientes.
+La validación incluyó los siguientes niveles.
 
-La regresión final automatizada completó las suites de comportamiento general, Finance STDIO, Finance HTTP, Git, demo local, tipos, lint y build. La validación remota confirmó el catálogo de veinticuatro tools, lecturas, proyecciones, viabilidad y una mutación reversible restaurada por MCP. El estado final registrado corresponde a 269 pruebas aprobadas. Los checks remotos se mantienen separados de la suite general porque dependen de infraestructura desplegada [1].
+- Pruebas unitarias y validación de errores.
+- Integraciones de Finance MCP con PostgreSQL efímero.
+- Integración HTTP y pruebas de Git MCP.
+- Escenario local Finance a Filesystem a Git con tres confirmaciones independientes.
+- Regresión automatizada de comportamiento, tipos, lint y build.
+- Validación remota de catálogo, lecturas, proyecciones, viabilidad y mutación reversible.
+
+La matriz final confirmó lifecycle, discovery, operaciones de lectura, confirmaciones y límites de sandbox. El estado final registrado corresponde a 269 pruebas aprobadas. Los checks remotos se mantienen separados de la suite general porque dependen de infraestructura desplegada [1].
 
 <!-- pagebreak -->
 

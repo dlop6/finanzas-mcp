@@ -242,13 +242,14 @@ def body_story(parsed: ParsedDocument, st):
             story.append(table_from_lines(table_lines, st))
             story.append(Spacer(1, 4 * mm))
             continue
-        if re.match(r"^\d+\. ", line):
-            story.append(Paragraph(inline(line), st["list"]))
+        if re.match(r"^(?:\d+\. |[-*] )", line):
+            bullet = re.sub(r"^(?:\d+\. |[-*] )", "", line)
+            story.append(Paragraph("• " + inline(bullet), st["list"]))
             index += 1
             continue
         paragraph_lines = [line]
         index += 1
-        while index < len(lines) and lines[index].strip() and not lines[index].startswith(("#", "|", "```", "<!--", "1. ", "2. ", "3. ", "4. ", "5. ", "6. ")):
+        while index < len(lines) and lines[index].strip() and not lines[index].startswith(("#", "|", "```", "<!--", "- ", "* ")) and not re.match(r"^\d+\. ", lines[index]):
             paragraph_lines.append(lines[index])
             index += 1
         story.append(Paragraph(inline(" ".join(paragraph_lines)), st["body"]))
