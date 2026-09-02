@@ -296,3 +296,13 @@ It validates the remote 24-tool contract, reads, projections, purchase viability
 - [Wireshark capture guides and reports](docs/wireshark/README.md)
 - [Design QA](docs/design-qa/)
 - [Final regression evidence](docs/evidence/un-52-e2e-regression.md)
+
+## Final academic report
+
+Generate the final academic report in PDF with:
+
+```powershell
+npm run report:pdf
+```
+
+The editable source is `docs/final-report.md`. The generated PDF is `output/pdf/finance-mcp-final-report.pdf`.

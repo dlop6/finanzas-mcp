@@ -41,7 +41,8 @@
     "test:git:integration": "vitest run --config vitest.git.config.mts",
     "demo:e2e": "tsx host/demo/cli.ts",
     "test:e2e:local": "vitest run --config vitest.e2e.config.mts",
-    "test:e2e:regression": "tsx scripts/qa/e2e-regression.ts"
+    "test:e2e:regression": "tsx scripts/qa/e2e-regression.ts",
+    "report:pdf": "python scripts/generate-final-report.py"
   },
   "dependencies": {
     "@modelcontextprotocol/server-filesystem": "2026.7.10",

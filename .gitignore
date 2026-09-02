@@ -49,3 +49,6 @@ next-env.d.ts
 
 # local Wireshark/TLS capture artifacts
 /docs/wireshark/local/
+
+# generated PDF review intermediates
+/tmp/pdfs/
