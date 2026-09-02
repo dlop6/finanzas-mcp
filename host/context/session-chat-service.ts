@@ -80,6 +80,7 @@ export function createSessionChatService(options: CreateSessionChatServiceOption
             };
           }
 
+          // The pending operation was produced by the Host, not by this follow-up message; clearing it first prevents a second execution.
           options.sessionStore.clearPendingConfirmation(normalizedSessionId);
           const completed = await options.chatOrchestrator.completeConfirmedWrite({
             sessionId: normalizedSessionId,
@@ -117,6 +118,7 @@ export function createSessionChatService(options: CreateSessionChatServiceOption
 
         if (result.status === "confirmation_required") {
           const description = writeOperationDescriber.describe(result.pendingOperation);
+          // Keep the exact proposed tool call outside the model history until the session receives an explicit decision.
           const snapshot = options.sessionStore.setPendingConfirmation(normalizedSessionId, {
             operation: result.pendingOperation,
             description,

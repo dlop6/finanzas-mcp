@@ -114,6 +114,7 @@ export class HostMcpToolRegistry {
       }
     }
 
+    // Discovery and metadata must agree before anything is registered, making this registry the Host's ownership and write-policy boundary.
     const prepared = discovered.map((tool) => {
       const metadata = input.metadata[tool.name];
       if (typeof metadata.isWriteOperation !== "boolean") {

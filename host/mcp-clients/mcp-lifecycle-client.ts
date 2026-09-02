@@ -54,6 +54,7 @@ export class McpLifecycleClient {
         throw new McpLifecycleError("PROTOCOL_ERROR", "MCP server returned an invalid initialize result");
       }
 
+      // MCP accepts this lifecycle notification without a JSON-RPC response; discovery starts only after it is sent.
       await this.transport.notify(MCP_METHODS.INITIALIZED_NOTIFICATION, undefined, { sessionId: HOST_MCP_LOG_SESSION_ID });
       this.currentState = "READY";
     } catch (error) {
@@ -99,6 +100,7 @@ export class McpLifecycleClient {
       return result;
     }
 
+    // A malformed result invalidates the session rather than allowing later tools to consume an untrusted contract.
     this.currentState = "CLOSED";
     await this.transport.close().catch(() => undefined);
     throw new McpLifecycleError("PROTOCOL_ERROR", `MCP server returned an invalid ${method} result`);

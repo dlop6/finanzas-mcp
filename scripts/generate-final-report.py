@@ -46,6 +46,7 @@ class ParsedDocument:
 
 
 def parse_source(path: Path) -> ParsedDocument:
+    # Markdown is the single editable source; this generator only validates and lays out that content.
     raw = path.read_text(encoding="utf-8")
     if not raw.startswith("---\n"):
         raise ValueError("Markdown metadata block is required")

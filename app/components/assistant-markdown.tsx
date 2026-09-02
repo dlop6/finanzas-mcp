@@ -42,6 +42,7 @@ function MarkdownLink({ href, children }: ComponentPropsWithoutRef<"a">) {
 }
 
 function OmittedImage({ alt }: ComponentPropsWithoutRef<"img">) {
+  // Markdown images are represented as text so assistant output cannot trigger remote image requests from the browser.
   return <span className={styles.omittedImage} role="note">Imagen externa omitida{alt ? `: ${alt}` : "."}</span>;
 }
 

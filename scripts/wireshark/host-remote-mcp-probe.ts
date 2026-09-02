@@ -111,6 +111,7 @@ function summarizeLogs(logger: InMemoryMcpInteractionLogStore, probeSessionId: s
 }
 
 export async function runHostRemoteMcpProbe(endpoint: string, options: HostRemoteMcpProbeOptions = {}): Promise<HostRemoteCaptureSummary> {
+  // The explicit public endpoint keeps capture evidence independent from local environment configuration.
   const config = loadExplicitRemoteConfig(endpoint);
   const logger = options.logger ?? new InMemoryMcpInteractionLogStore();
   const probeSessionId = (options.idGenerator ?? randomUUID)();

@@ -315,6 +315,7 @@ async function readTool(registry: HostMcpToolRegistry, name: string, args: Recor
   } catch {
     throw new Error("tool unavailable");
   }
+  // The dashboard is restricted to discovered Finance read tools, not direct Finance services or reconstructed calculations.
   if (tool.serverId !== "finance-mcp" || tool.isWriteOperation) throw new Error("tool unavailable");
   return tool.client.toolsCall(name, structuredClone(args), { sessionId: WEB_DASHBOARD_LOG_SESSION_ID });
 }
@@ -344,6 +345,7 @@ export function createWebFinancialDashboardService(options: {
   return {
     async getDashboard(): Promise<WebFinancialDashboardResponse> {
       const period = getDashboardPeriod(clock);
+      // Independent reads start together so one unavailable section does not delay the remaining dashboard data.
       const [balance, monthlyCashFlow, receivables, debts, sevenDays, thirtyDays, lowStock] = await Promise.all([
         section(() => readTool(options.registry, "get_current_balance", {}), parseBalance),
         section(() => readTool(options.registry, "get_cash_flow_summary", { startDate: period.startDate, endDate: period.endDate }), parseMonthlyCashFlow),

@@ -158,6 +158,7 @@ export function createWebChatHandler(getRuntime: WebChatRuntimeProvider): (reque
         const decisionSessionId = input.sessionId;
         const session = runtime.sessionChat.getSession(decisionSessionId);
         if (!session.pendingOperation) return errorResponse("CONFIRMATION_NOT_FOUND", 409, decisionSessionId);
+        // The browser sends only a decision; SessionChatService retrieves the stored operation and never trusts client-supplied tool arguments.
         const decisionMessage = input.confirmationDecision === "confirm" ? "sí" : "no";
         const result = await runtime.sessionChat.sendMessage(decisionSessionId, decisionMessage);
         return Response.json(toResponse(result, decisionSessionId), { headers: { "Cache-Control": "no-store" } });

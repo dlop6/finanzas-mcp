@@ -182,6 +182,7 @@ class WebRuntimeManager {
   getFinance(): Promise<WebFinanceRuntime> {
     if (this.hostRuntime) return Promise.resolve(this.hostRuntime);
     if (this.financePromise) return this.financePromise;
+    // Dashboard requests share this promise and never require the chat-only DeepSeek, Filesystem, or Git capabilities.
     const promise = createWebFinanceRuntime().then((runtime) => {
       this.financeRuntime = runtime;
       return runtime;
@@ -195,6 +196,7 @@ class WebRuntimeManager {
 
   getHost(): Promise<WebHostRuntime> {
     if (this.hostPromise) return this.hostPromise;
+    // Chat extends the already-running Finance foundation, preserving one registry and interaction log store per process.
     const promise = this.getFinance().then((financeRuntime) => extendWebFinanceRuntime(financeRuntime, {})).then((runtime) => {
       this.hostRuntime = runtime;
       this.financeRuntime = runtime;

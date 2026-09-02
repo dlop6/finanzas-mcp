@@ -125,6 +125,7 @@ export class StreamableHttpJsonRpcClient implements McpJsonRpcTransport {
         throw new StreamableHttpTransportError("PROTOCOL_ERROR", "MCP server returned an invalid JSON-RPC response.");
       }
       if (method === "initialize") {
+        // The transport owns this server-issued value so it cannot reach lifecycle callers, logs, or Web DTOs.
         const issuedSessionId = response.headers.get("mcp-session-id");
         if (!validSessionId(issuedSessionId)) {
           this.appendLog({ sessionId, direction: "MCP_TO_HOST", messageType: "error", method, requestId: request.id, payload: raw, status: "PROTOCOL_ERROR", durationMs: this.durationSince(startedAt) });
@@ -209,6 +210,7 @@ export class StreamableHttpJsonRpcClient implements McpJsonRpcTransport {
       if (this.mcpSessionId) throw new StreamableHttpTransportError("INVALID_STATE", "MCP HTTP session is already initialized.");
       return undefined;
     }
+    // No retry, local fallback, or implicit reinitialization is permitted after a remote session is lost.
     if (!this.mcpSessionId) throw new StreamableHttpTransportError("INVALID_STATE", "MCP HTTP session has not been initialized.");
     return this.mcpSessionId;
   }
