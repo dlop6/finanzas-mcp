@@ -137,7 +137,7 @@ export async function runHostRemoteMcpProbe(endpoint: string, options: HostRemot
     const registered = registry.list();
     const writeCount = registered.filter((tool) => tool.isWriteOperation).length;
     const readCount = registered.length - writeCount;
-    if (registered.length !== 24 || writeCount !== 15 || readCount !== 9 || registered.some((tool) => tool.serverId !== "finance-mcp")) {
+    if (registered.length !== 25 || writeCount !== 15 || readCount !== 10 || registered.some((tool) => tool.serverId !== "finance-mcp")) {
       throw new HostRemoteMcpProbeError("TOOL_CONTRACT_MISMATCH");
     }
 
@@ -188,7 +188,7 @@ if (isEntrypoint) {
     ? undefined
     : async (summary: HostRemoteCaptureSummary) => writeFile(summaryPath, `${JSON.stringify(summary)}\n`, "utf8");
   runHostRemoteMcpProbe(endpoint ?? "", { writeSummary })
-    .then(() => process.stdout.write("Host remote MCP capture probe completed: 24 tools and one read operation.\n"))
+    .then(() => process.stdout.write("Host remote MCP capture probe completed: 25 tools and one read operation.\n"))
     .catch((error: unknown) => {
       const code = error instanceof HostRemoteMcpProbeError ? error.code : "READ_TOOL_FAILED";
       process.stderr.write(`Host remote MCP capture probe failed: ${code}.\n`);

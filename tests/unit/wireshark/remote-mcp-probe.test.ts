@@ -13,7 +13,7 @@ describe("remote MCP Wireshark probe", () => {
     const request = vi.fn<RemoteMcpProbeFetch>()
       .mockResolvedValueOnce(response({ jsonrpc: "2.0", id: 1, result: {} }, 200, sessionHeaders))
       .mockResolvedValueOnce(new Response(null, { status: 202 }))
-      .mockResolvedValueOnce(response({ jsonrpc: "2.0", id: 2, result: { tools: Array.from({ length: 24 }, () => ({})) } }))
+      .mockResolvedValueOnce(response({ jsonrpc: "2.0", id: 2, result: { tools: Array.from({ length: 25 }, () => ({})) } }))
       .mockResolvedValueOnce(response({ jsonrpc: "2.0", id: 3, result: { content: [], structuredContent: { currentBalance: "19475.00" } } }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
 

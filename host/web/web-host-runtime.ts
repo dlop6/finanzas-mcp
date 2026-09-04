@@ -11,6 +11,7 @@ import { startGitMcpSessionLocal } from "@/host/mcp-clients/git-mcp-local";
 import { InMemoryMcpInteractionLogStore, type McpInteractionLogReader, type McpInteractionLogWriter } from "@/host/mcp-clients/mcp-interaction-log";
 import type { McpLifecycleClient } from "@/host/mcp-clients/mcp-lifecycle-client";
 import { createChatOrchestrator } from "@/host/orchestration/chat-orchestrator";
+import { HostWriteOperationDescriber, TransactionReferenceResolver } from "@/host/confirmation";
 import { FILESYSTEM_MCP_SERVER_ID, registerFilesystemMcpTools } from "@/host/orchestration/filesystem-mcp-tools";
 import { registerFinanceMcpTools } from "@/host/orchestration/finance-mcp-tools";
 import { GIT_MCP_SERVER_ID, registerGitMcpTools } from "@/host/orchestration/git-mcp-tools";
@@ -24,6 +25,9 @@ export const WEB_HOST_SYSTEM_PROMPT = [
   "No emitas HTML, imágenes remotas ni envuelvas toda la respuesta en un bloque de código.",
   "Responde preguntas generales directamente y usa las herramientas registradas solo cuando necesites datos o una acción externa.",
   "Finance MCP es la autoridad para cálculos y datos financieros: no inventes saldos, movimientos ni resultados.",
+  "Antes de preparar record_income o record_expense, consulta get_transaction_reference_data para usar cuentas y categorías reales por nombre.",
+  "Nunca pidas accountId ni categoryId. Pregunta por nombres cuando falten o sean ambiguos. Si se pide cualquier categoría, propone Otros ingresos u Otros gastos solo si aparece en las referencias compatibles.",
+  "Aclara montos o monedas ambiguos y no conviertas monedas. El sistema usa GTQ.",
   "No afirmes que una escritura se realizó antes de la confirmación explícita del Host.",
 ].join(" ");
 
@@ -63,7 +67,7 @@ export async function createWebFinanceRuntime(options: CreateWebFinanceRuntimeOp
     const registry = new HostMcpToolRegistry();
     await registerFinanceMcpTools(registry, financeClient);
     const tools = registry.list();
-    if (tools.length !== 24 || tools.filter((tool) => tool.isWriteOperation).length !== 15) {
+    if (tools.length !== 25 || tools.filter((tool) => tool.isWriteOperation).length !== 15) {
       throw new WebHostRuntimeError("INVALID_CATALOG", "The Finance MCP catalog is incomplete.", "finance");
     }
     const startedFinanceClient = financeClient;
@@ -117,7 +121,7 @@ async function extendWebFinanceRuntime(financeRuntime: WebFinanceRuntime, option
     await registerFilesystemMcpTools(financeRuntime.registry, filesystemClient);
     await registerGitMcpTools(financeRuntime.registry, gitClient);
     const tools = financeRuntime.registry.list();
-    if (tools.length !== 50 || tools.filter((tool) => tool.isWriteOperation).length !== 24) {
+    if (tools.length !== 51 || tools.filter((tool) => tool.isWriteOperation).length !== 24) {
       throw new WebHostRuntimeError("INVALID_CATALOG", "The Host MCP catalog is incomplete.", "discovery");
     }
     const chatOrchestrator = createChatOrchestrator({ deepSeekClient, toolRegistry: financeRuntime.registry });
@@ -125,6 +129,7 @@ async function extendWebFinanceRuntime(financeRuntime: WebFinanceRuntime, option
       sessionStore: new InMemoryConversationSessionStore(),
       chatOrchestrator,
       contextCompactor,
+      writeOperationDescriber: new HostWriteOperationDescriber(new TransactionReferenceResolver(financeRuntime.registry)),
     });
     let closed = false;
     return {

@@ -117,7 +117,7 @@ export function createSessionChatService(options: CreateSessionChatServiceOption
         });
 
         if (result.status === "confirmation_required") {
-          const description = writeOperationDescriber.describe(result.pendingOperation);
+          const description = await writeOperationDescriber.describe(result.pendingOperation, { sessionId: normalizedSessionId });
           // Keep the exact proposed tool call outside the model history until the session receives an explicit decision.
           const snapshot = options.sessionStore.setPendingConfirmation(normalizedSessionId, {
             operation: result.pendingOperation,

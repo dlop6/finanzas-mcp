@@ -223,55 +223,57 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
         { role: "user", content: userMessage },
       ];
       const turnMessages: DeepSeekChatMessage[] = [{ role: "user", content: userMessage }];
-      const firstResponse = await options.deepSeekClient.sendChat(firstMessages, options.toolRegistry.toDeepSeekTools());
-      const firstAssistantMessage = assistantMessage(firstResponse);
-      turnMessages.push(firstAssistantMessage);
+      let response = await options.deepSeekClient.sendChat(firstMessages, options.toolRegistry.toDeepSeekTools());
 
-      if (firstResponse.toolCalls.length === 0) {
-        ensureFinalContent(firstResponse);
-        return { status: "completed", response: firstResponse, turnMessages: structuredClone(turnMessages) };
-      }
+      // Reference reads may precede one proposed write, but the conversation never gets an unbounded tool loop.
+      for (let round = 1; round <= 2; round += 1) {
+        const responseMessage = assistantMessage(response);
+        turnMessages.push(responseMessage);
 
-      const prepared = prepareToolCalls(options.toolRegistry, firstResponse.toolCalls);
-      const writes = prepared.filter((call) => call.tool.isWriteOperation);
-      if (writes.length > 0) {
-        if (prepared.length !== 1 || writes.length !== 1) {
-          throw new ChatOrchestrationError("UNSUPPORTED_WRITE_BATCH", "Write tool calls must be requested one at a time.");
+        if (response.toolCalls.length === 0) {
+          ensureFinalContent(response);
+          return { status: "completed", response, turnMessages: structuredClone(turnMessages) };
         }
 
-        const write = writes[0];
-        return {
-          status: "confirmation_required",
-          pendingOperation: {
-            toolCallId: write.call.id,
-            serverId: write.tool.serverId,
-            toolName: write.tool.definition.name,
-            arguments: structuredClone(write.arguments),
-          },
-          turnMessages: structuredClone(turnMessages),
-        };
-      }
+        const prepared = prepareToolCalls(options.toolRegistry, response.toolCalls);
+        const writes = prepared.filter((call) => call.tool.isWriteOperation);
+        if (writes.length > 0) {
+          if (prepared.length !== 1 || writes.length !== 1) {
+            throw new ChatOrchestrationError("UNSUPPORTED_WRITE_BATCH", "Write tool calls must be requested one at a time.");
+          }
 
-      const toolMessages: DeepSeekChatMessage[] = [];
-      for (const preparedCall of prepared) {
-        let result: McpCallToolResult;
-        try {
-          result = await preparedCall.tool.client.toolsCall(preparedCall.tool.definition.name, preparedCall.arguments, { sessionId });
-        } catch {
-          result = safeMcpFailure();
+          const write = writes[0];
+          return {
+            status: "confirmation_required",
+            pendingOperation: {
+              toolCallId: write.call.id,
+              serverId: write.tool.serverId,
+              toolName: write.tool.definition.name,
+              arguments: structuredClone(write.arguments),
+            },
+            turnMessages: structuredClone(turnMessages),
+          };
         }
-        toolMessages.push({ role: "tool", toolCallId: preparedCall.call.id, content: serializeToolResult(result) });
+
+        for (const preparedCall of prepared) {
+          let result: McpCallToolResult;
+          try {
+            result = await preparedCall.tool.client.toolsCall(preparedCall.tool.definition.name, preparedCall.arguments, { sessionId });
+          } catch {
+            result = safeMcpFailure();
+          }
+          turnMessages.push({ role: "tool", toolCallId: preparedCall.call.id, content: serializeToolResult(result) });
+        }
+
+        response = await options.deepSeekClient.sendChat(
+          [...firstMessages, ...turnMessages],
+          round === 1 ? options.toolRegistry.toDeepSeekTools() : undefined,
+        );
       }
 
-      const finalResponse = await options.deepSeekClient.sendChat([
-        ...firstMessages,
-        firstAssistantMessage,
-        ...toolMessages,
-      ]);
-      ensureFinalContent(finalResponse);
-      turnMessages.push(...toolMessages, assistantMessage(finalResponse));
-
-      return { status: "completed", response: finalResponse, turnMessages: structuredClone(turnMessages) };
+      ensureFinalContent(response);
+      turnMessages.push(assistantMessage(response));
+      return { status: "completed", response, turnMessages: structuredClone(turnMessages) };
     },
 
     async completeConfirmedWrite(input) {

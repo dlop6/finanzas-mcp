@@ -8,4 +8,5 @@ export * from "./purchase-viability-service";
 export * from "./receivable-service";
 export * from "./results";
 export * from "./transaction-service";
+export * from "./transaction-reference-service";
 export * from "./validation";

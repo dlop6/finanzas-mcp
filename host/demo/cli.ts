@@ -6,6 +6,7 @@ import { createContextCompactor, InMemoryConversationSessionStore, createSession
 import { createDeepSeekClient, DeepSeekClientError } from "@/host/llm";
 import { HOST_MCP_LOG_SESSION_ID } from "@/host/mcp-clients/mcp-interaction-log";
 import { createChatOrchestrator } from "@/host/orchestration/chat-orchestrator";
+import { HostWriteOperationDescriber, TransactionReferenceResolver } from "@/host/confirmation";
 import { createFinancialReportDemo, FinancialReportDemoError, startHostMcpRuntime } from "./index";
 
 function displayLogs(title: string, entries: ReturnType<Awaited<ReturnType<typeof startHostMcpRuntime>>["interactionLogs"]["listBySession"]>): void {
@@ -24,6 +25,7 @@ async function main(): Promise<void> {
       sessionStore: new InMemoryConversationSessionStore(),
       chatOrchestrator: createChatOrchestrator({ deepSeekClient, toolRegistry: runtime.registry }),
       contextCompactor: createContextCompactor({ deepSeekClient }),
+      writeOperationDescriber: new HostWriteOperationDescriber(new TransactionReferenceResolver(runtime.registry)),
     });
     const demo = createFinancialReportDemo({
       sessionChat: chat,

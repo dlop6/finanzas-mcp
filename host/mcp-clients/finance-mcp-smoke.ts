@@ -14,10 +14,10 @@ async function main(): Promise<void> {
   try {
     const registry = new HostMcpToolRegistry();
     await registerFinanceMcpTools(registry, client);
-    if (registry.list().length !== 24) throw new Error("invalid catalog");
+    if (registry.list().length !== 25) throw new Error("invalid catalog");
     const result = await client.toolsCall("get_current_balance");
     if (result.isError) throw new Error("read tool failed");
-    process.stdout.write(`Finance MCP ${config.mode} smoke succeeded: 24 tools.\n`);
+    process.stdout.write(`Finance MCP ${config.mode} smoke succeeded: 25 tools.\n`);
   } finally {
     await client.close();
   }

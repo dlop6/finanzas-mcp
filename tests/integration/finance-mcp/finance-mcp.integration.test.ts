@@ -32,8 +32,23 @@ describe("Finance MCP against isolated PostgreSQL", () => {
       "record_receivable", "list_receivables", "update_receivable", "mark_receivable_collected", "delete_receivable",
       "create_product", "list_products", "update_product", "record_inventory_movement", "list_low_stock_products",
       "get_current_balance", "get_cash_flow_summary", "project_cash_flow", "evaluate_purchase_viability",
+      "get_transaction_reference_data",
     ]);
     expect(tools.every((tool) => !("isWriteOperation" in tool))).toBe(true);
+  });
+
+  it("returns only safe transaction references compatible with the requested type", async () => {
+    const income = data<{
+      currency: string;
+      accounts: Array<{ id: number; name: string; type: string }>;
+      categories: Array<{ id: number; name: string; type: string }>;
+    }>(await harness.callTool("get_transaction_reference_data", { type: "INCOME" }));
+
+    expect(income.currency).toBe("GTQ");
+    expect(income.accounts.map((account) => account.name)).toEqual(["Banco", "Efectivo"]);
+    expect(income.categories.map((category) => category.name)).toEqual(["Otros ingresos", "Servicios", "Ventas"]);
+    expect(income.categories.every((category) => category.type === "INCOME")).toBe(true);
+    expect(income.accounts.every((account) => Object.keys(account).sort().join(",") === "id,name,type")).toBe(true);
   });
 
   it("persists transactions, filters them, and rejects invalid writes", async () => {

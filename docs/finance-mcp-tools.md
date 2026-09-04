@@ -10,7 +10,7 @@ Finance MCP is a local Model Context Protocol server for the financial administr
 - Authoritative calculations: Finance MCP services. An LLM may explain results but must not calculate or override them.
 - Currency: GTQ only.
 - Canonical demo dataset date: `2026-08-08`.
-- Productive catalog: 24 tools, consisting of 15 writes and 9 reads.
+- Productive catalog: 25 tools, consisting of 15 writes and 10 reads.
 
 This document specifies the public wire contract. It does not expose Prisma models, repository interfaces, handlers, credentials, or other server internals.
 
@@ -81,7 +81,7 @@ Notifications have no ID and produce no response.
 }
 ```
 
-The result contains all 24 definitions in the order listed in [Tool catalog](#5-tool-catalog). Each public definition contains exactly `name`, `description`, and `inputSchema`. The internal `isWriteOperation` flag is deliberately not part of the MCP wire format.
+The result contains all 25 definitions in the order listed in [Tool catalog](#5-tool-catalog). Each public definition contains exactly `name`, `description`, and `inputSchema`. The internal `isWriteOperation` flag is deliberately not part of the MCP wire format.
 
 ### 2.4 Call a tool
 
@@ -279,6 +279,7 @@ No error includes SQL, credentials, `DATABASE_URL`, stack traces, or internal Pr
 | 22 | `get_cash_flow_summary` | Read |
 | 23 | `project_cash_flow` | Read |
 | 24 | `evaluate_purchase_viability` | Read |
+| 25 | `get_transaction_reference_data` | Read |
 
 ## 6. Domain entity map
 
@@ -311,6 +312,16 @@ The examples use strict JSON without comments, placeholders, or omitted fields r
 Entities: `Business`, `Account`, `Category`, and `Transaction`.
 
 Transaction mutations return the affected `TransactionResult` and a recalculated `MoneyResult`. Current balance is always derived from initial account balances plus income minus expenses.
+
+### `get_transaction_reference_data`
+
+Purpose: return only the account labels and categories compatible with a proposed transaction type. Operation: **Read**.
+
+| Parameter | Required | Type and restrictions |
+|---|---|---|
+| `type` | Yes | `INCOME` or `EXPENSE`. |
+
+The structured result contains `currency`, ordered `accounts` with `id`, `name`, and `type`, and ordered compatible `categories` with `id`, `name`, and `type`. It omits balances, transactions, timestamps, and internal business fields. The Host uses this read to translate a user's named selection into the IDs required by `record_income` or `record_expense`.
 
 ### 8.1 `record_income`
 

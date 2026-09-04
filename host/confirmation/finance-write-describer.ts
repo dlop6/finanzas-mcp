@@ -1,8 +1,9 @@
 import type { PendingWriteOperation } from "@/host/orchestration/chat-orchestrator";
 import { ConfirmationError } from "./confirmation-error";
+import type { TransactionReferenceResolver } from "./transaction-reference-resolver";
 
 export type WriteOperationDescriber = {
-  describe(operation: PendingWriteOperation): string;
+  describe(operation: PendingWriteOperation, context?: { sessionId: string }): string | Promise<string>;
 };
 
 export const financeWriteToolNames = [
@@ -63,14 +64,24 @@ function updateFields(args: Record<string, unknown>, fields: readonly [string, s
 }
 
 export class FinanceWriteOperationDescriber implements WriteOperationDescriber {
-  describe(operation: PendingWriteOperation): string {
+  constructor(private readonly transactionReferences?: TransactionReferenceResolver) {}
+
+  describe(operation: PendingWriteOperation, context?: { sessionId: string }): string | Promise<string> {
     const args = object(operation.arguments);
 
     switch (operation.toolName) {
       case "record_income":
-        return `Registrar un ingreso de ${money(args, "amount")} en la cuenta ${integer(args, "accountId")}, categoría ${integer(args, "categoryId")}, con fecha ${text(args, "date")}${optionalText(args, "description", ", descripción") ?? ""}.`;
-      case "record_expense":
-        return `Registrar un gasto de ${money(args, "amount")} en la cuenta ${integer(args, "accountId")}, categoría ${integer(args, "categoryId")}, con fecha ${text(args, "date")}${optionalText(args, "description", ", descripción") ?? ""}.`;
+      case "record_expense": {
+        const kind = operation.toolName === "record_income" ? "INCOME" : "EXPENSE";
+        const accountId = integer(args, "accountId");
+        const categoryId = integer(args, "categoryId");
+        const format = (references: { accountName: string; categoryName: string }) =>
+          `Registrar un ${kind === "INCOME" ? "ingreso" : "gasto"} de ${money(args, "amount")} en la cuenta ${references.accountName}, categoría ${references.categoryName}, con fecha ${text(args, "date")}${optionalText(args, "description", ", descripción") ?? ""}.`;
+        if (this.transactionReferences && context) {
+          return this.transactionReferences.resolve(context.sessionId, kind, accountId, categoryId).then(format);
+        }
+        return format({ accountName: String(accountId), categoryName: String(categoryId) });
+      }
       case "update_transaction":
         return `Actualizar la transacción ${integer(args, "transactionId")}: ${updateFields(args, [["accountId", "cuenta", "integer"], ["categoryId", "categoría", "integer"], ["amount", "monto", "money"], ["date", "fecha", "text"], ["description", "descripción", "text"]])}.`;
       case "delete_transaction":

@@ -104,6 +104,7 @@ describe("local MCP STDIO transport", () => {
           { name: "get_current_balance" }, { name: "get_cash_flow_summary" },
           { name: "project_cash_flow" },
           { name: "evaluate_purchase_viability" },
+          { name: "get_transaction_reference_data" },
         ],
       });
     } finally {
@@ -155,9 +156,9 @@ describe("local MCP STDIO transport", () => {
       await registerFinanceMcpTools(registry, toolClient);
 
       const registered = registry.list();
-      expect(registered).toHaveLength(24);
+      expect(registered).toHaveLength(25);
       expect(registered.filter((tool) => tool.isWriteOperation)).toHaveLength(15);
-      expect(registered.filter((tool) => !tool.isWriteOperation)).toHaveLength(9);
+      expect(registered.filter((tool) => !tool.isWriteOperation)).toHaveLength(10);
       expect(registered.every((tool) => tool.serverId === "finance-mcp")).toBe(true);
       expect(registered.map((tool) => tool.definition)).toEqual(discovered);
       expect(registry.toDeepSeekTools()).toEqual(

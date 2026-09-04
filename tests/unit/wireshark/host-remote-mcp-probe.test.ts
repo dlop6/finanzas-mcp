@@ -36,7 +36,7 @@ function fakeClient(logs: InMemoryMcpInteractionLogStore, probeSessionId: string
 }
 
 describe("Host remote MCP Wireshark probe", () => {
-  it("uses the Host client lifecycle, discovers 24 tools, calls one read, and creates a safe summary", async () => {
+  it("uses the Host client lifecycle, discovers 25 tools, calls one read, and creates a safe summary", async () => {
     const logs = new InMemoryMcpInteractionLogStore();
     const client = fakeClient(logs, "probe-uuid");
     const writeSummary = vi.fn(async () => undefined);

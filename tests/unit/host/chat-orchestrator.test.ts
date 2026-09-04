@@ -116,7 +116,7 @@ describe("chat orchestration", () => {
     expect(result).toMatchObject({ status: "completed", response: { content: "Your balance is Q19,475.00." } });
     expect(client.toolsCall).toHaveBeenCalledWith("read_balance", {}, { sessionId: "session-a" });
     expect(deepSeek.sendChat).toHaveBeenCalledTimes(2);
-    expect(deepSeek.sendChat.mock.calls[1][1]).toBeUndefined();
+    expect(deepSeek.sendChat.mock.calls[1][1]).toEqual(expect.any(Array));
     expect(deepSeek.sendChat.mock.calls[1][0]).toContainEqual({
       role: "tool",
       toolCallId: "call-1",
@@ -238,6 +238,7 @@ describe("chat orchestration", () => {
     const deepSeek = llm(
       response({ toolCalls: [{ id: "call-1", type: "function", function: { name: "read_balance", arguments: "{}" } }] }),
       response({ toolCalls: [{ id: "call-2", type: "function", function: { name: "read_balance", arguments: "{}" } }] }),
+      response({ toolCalls: [{ id: "call-3", type: "function", function: { name: "read_balance", arguments: "{}" } }] }),
     );
 
     await expect(createChatOrchestrator({ deepSeekClient: deepSeek, toolRegistry: registry }).run(input)).rejects.toMatchObject({

@@ -24,11 +24,12 @@ The Finance server implements JSON-RPC and MCP `2025-11-25` manually; no MCP SDK
 
 - A read-only financial dashboard with current balance, monthly income and expenses, 7/30-day projections, receivables, debts, and low-stock products.
 - A Spanish Web chat backed by DeepSeek and the Host. Conversation state lasts only for the current browser tab.
-- A Finance MCP catalog of 24 tools: 9 reads and 15 writes for transactions, debts, receivables, inventory, cash flow, projections, and purchase viability.
+- A Finance MCP catalog of 25 tools: 10 reads and 15 writes for transactions, debts, receivables, inventory, cash flow, projections, and purchase viability.
 - Official Filesystem MCP restricted to `docs/generated` and official Git MCP restricted to the nested `docs/generated/git-demo` repository.
 - Explicit Host confirmation for all 24 global write tools. The browser only sends a confirmation decision; it never sends tool arguments back to the Host.
 - A Web `Logs MCP` tab for sanitized in-memory lifecycle, dashboard, and current-chat interactions.
-- Finance MCP through local STDIO or remote Streamable HTTP, with the same 24-tool public contract.
+- Finance MCP through local STDIO or remote Streamable HTTP, with the same 25-tool public contract.
+- Income and expense requests use real account and category names. The Host retrieves and verifies their internal references before it presents the normal write confirmation.
 - A local Finance → Filesystem → Git end-to-end demo that writes, stages, and commits one generated report after three independent confirmations.
 
 ## Architecture

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   FinanceWriteOperationDescriber,
   financeWriteToolNames,
@@ -22,6 +22,17 @@ describe("Finance write operation descriptions", () => {
 
     expect(description).toBe('Registrar un ingreso de GTQ 500.00 en la cuenta 1, categoría 2, con fecha 2026-08-23, descripción "Venta\\nmayorista".');
     expect(arguments_).toEqual({ accountId: 1, categoryId: 2, amount: "500.00", date: "2026-08-23", description: "Venta\nmayorista" });
+  });
+
+  it("uses verified account and category names when a session-aware resolver is available", async () => {
+    const resolve = vi.fn().mockResolvedValue({ accountName: "Banco", categoryName: "Otros ingresos" });
+    const referenceAware = new FinanceWriteOperationDescriber({ resolve } as never);
+
+    await expect(referenceAware.describe(
+      { toolCallId: "call-verified", serverId: "finance-mcp", toolName: "record_income", arguments: { accountId: 2, categoryId: 3, amount: "3500.00", date: "2026-11-16", description: "prueba" } },
+      { sessionId: "session-a" },
+    )).resolves.toBe('Registrar un ingreso de GTQ 3500.00 en la cuenta Banco, categoría Otros ingresos, con fecha 2026-11-16, descripción "prueba".');
+    expect(resolve).toHaveBeenCalledWith("session-a", "INCOME", 2, 3);
   });
 
   it("describes updates in stable field order and fails closed for unknown writes", () => {
