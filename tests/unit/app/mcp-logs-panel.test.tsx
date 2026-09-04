@@ -21,6 +21,7 @@ const response = {
       requestId: 0,
       payload: '<script>window.bad=true</script>',
       status: "SENT",
+      durationMs: 0,
     }, {
       timestamp: "2026-08-30T18:00:00.100Z",
       context: "HOST",
@@ -32,7 +33,7 @@ const response = {
       requestId: 0,
       payload: '{"error":"safe"}',
       status: "PROTOCOL_ERROR",
-      durationMs: 0,
+      durationMs: 5051.248100000001,
     }],
   }],
 } as const;
@@ -44,13 +45,27 @@ describe("McpLogsPanel", () => {
     render(<McpLogsPanel chatSessionId={null} active />);
 
     await screen.findByText("Lifecycle y discovery");
+    expect(screen.getByRole("table", { name: "Eventos de Lifecycle y discovery" })).toBeTruthy();
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Hora", "Evento", "Resultado"]);
     expect(screen.getByText("Host → MCP")).toBeTruthy();
     expect(screen.getAllByText("Request ID: 0")).toHaveLength(2);
-    const details = screen.getAllByText("Ver payload JSON-RPC").map((item) => item.closest("details")!);
-    expect(details[0].open).toBe(false);
-    expect(details[1].open).toBe(true);
-    expect(screen.getByText("<script>window.bad=true</script>").tagName).toBe("CODE");
+    expect(screen.getAllByText("Enviado")).toHaveLength(1);
+    expect(screen.getAllByText("Error de protocolo")).toHaveLength(1);
+    expect(screen.getByText("0 ms")).toBeTruthy();
+    expect(screen.getByText("5,051.2 ms")).toBeTruthy();
+    const payloadButtons = screen.getAllByRole("button", { name: /payload de initialize/i });
+    expect(payloadButtons[0].getAttribute("aria-expanded")).toBe("false");
+    expect(payloadButtons[1].getAttribute("aria-expanded")).toBe("true");
+    expect(screen.queryByText("<script>window.bad=true</script>")).toBeNull();
+    expect(screen.getByText('{"error":"safe"}').tagName).toBe("CODE");
     expect(document.querySelector("script")).toBeNull();
+
+    fireEvent.click(payloadButtons[0]);
+    expect(payloadButtons[0].getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("<script>window.bad=true</script>").tagName).toBe("CODE");
+    fireEvent.click(payloadButtons[0]);
+    expect(payloadButtons[0].getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("<script>window.bad=true</script>")).toBeNull();
   });
 
   it("filters locally and refreshes without duplicate requests", async () => {
@@ -61,10 +76,14 @@ describe("McpLogsPanel", () => {
     fireEvent.change(screen.getByLabelText("Tipo de mensaje"), { target: { value: "error" } });
     expect(screen.queryByText("Host → MCP")).toBeNull();
     expect(screen.getByText("MCP → Host")).toBeTruthy();
+    const errorPayload = screen.getByRole("button", { name: /ocultar payload de initialize/i });
+    fireEvent.click(errorPayload);
+    expect(errorPayload.getAttribute("aria-expanded")).toBe("false");
     const refresh = screen.getByRole("button", { name: "Actualizar" });
     fireEvent.click(refresh);
     fireEvent.click(refresh);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(errorPayload.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("distinguishes filters without matches from an empty log context", async () => {

@@ -1,6 +1,6 @@
 .dashboard { padding: clamp(1rem, 3vw, 1.75rem); }
 .toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.25rem; margin-bottom: 1.5rem; }
-.eyebrow { display: inline-flex; min-height: 1.55rem; align-items: center; border: 1px solid var(--nb-ink); border-radius: var(--nb-radius-pill); background: var(--nb-teal); padding: 0.12rem 0.5rem; font-size: .66rem; font-weight: 900; letter-spacing: .08em; }
+.eyebrow { display: inline-flex; min-height: 1.55rem; align-items: center; border: 1px solid var(--nb-ink); border-radius: var(--nb-radius-pill); background: var(--nb-teal); color: var(--nb-on-teal); padding: 0.12rem 0.5rem; font-size: .66rem; font-weight: 900; letter-spacing: .08em; }
 .toolbar h2 { margin: .55rem 0 0; font-size: clamp(1.7rem, 4vw, 2.5rem); font-weight: 900; letter-spacing: -.055em; line-height: 1; }
 .toolbar > div > p:last-child { margin: .55rem 0 0; color: var(--nb-muted); font-weight: 600; }
 .refreshArea { display: flex; min-width: 12rem; flex-direction: column; align-items: flex-end; gap: .55rem; color: var(--nb-muted); font-size: .78rem; font-weight: 650; text-align: right; }
@@ -17,7 +17,9 @@
 .kpiLabel, .count { margin: 0; color: var(--nb-muted); font-size: .76rem; font-weight: 850; letter-spacing: .035em; text-transform: uppercase; }
 .kpiValue { display: block; margin-top: .45rem; font-size: clamp(1.45rem, 3vw, 2rem); font-weight: 900; letter-spacing: -.045em; overflow-wrap: anywhere; }
 .kpiDescription { margin: .65rem 0 0; color: var(--nb-muted); font-size: .84rem; line-height: 1.4; }
-.balanceCard { background: var(--nb-teal); }
+.balanceCard { background: var(--nb-teal); color: var(--nb-on-teal); }
+.balanceCard .kpiLabel,
+.balanceCard .kpiDescription { color: var(--nb-on-teal); }
 .balanceCard details { margin-top: 1rem; border-top: 1px solid var(--nb-ink); padding-top: .7rem; }
 .balanceCard summary { cursor: pointer; font-weight: 850; }
 .accountList { display: grid; gap: .45rem; margin: .65rem 0 0; padding: 0; list-style: none; }
@@ -55,7 +57,7 @@
 .skeletonCard { height: 12.5rem; }
 .skeletonLarge { height: 18rem; }
 @keyframes pulse { 50% { opacity: .62; } }
-.refreshButton:focus-visible, .textButton:focus-visible, .balanceCard summary:focus-visible { outline: 3px solid var(--nb-teal); outline-offset: 3px; }
+.refreshButton:focus-visible, .textButton:focus-visible, .balanceCard summary:focus-visible { outline: 3px solid var(--nb-focus); outline-offset: 3px; }
 @media (max-width: 56rem) { .kpiGrid, .attentionGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .attentionGrid > :last-child { grid-column: 1 / -1; } }
 @media (max-width: 40rem) { .toolbar { flex-direction: column; } .refreshArea { width: 100%; align-items: flex-start; text-align: left; } .refreshButton { width: 100%; } .kpiGrid, .projectionGrid, .attentionGrid { grid-template-columns: 1fr; } .attentionGrid > :last-child { grid-column: auto; } .card { box-shadow: 1px 1px 0 var(--nb-ink); } .listItem { flex-direction: column; } .itemValues { text-align: left; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } .refreshButton, .textButton { transition: none; } }

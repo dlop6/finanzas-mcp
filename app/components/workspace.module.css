@@ -1,13 +1,13 @@
 .page { min-height: 100svh; padding: clamp(0.75rem, 2vw, 1.5rem); }
 .shell { width: min(100%, 74rem); min-height: calc(100svh - clamp(1.5rem, 4vw, 3rem)); margin: 0 auto; overflow: hidden; border: var(--nb-border); border-radius: var(--nb-radius-shell); background: var(--nb-surface); box-shadow: var(--nb-shadow); }
 .header { padding: clamp(1.35rem, 4vw, 2.5rem); border-bottom: var(--nb-border); background: var(--nb-paper); }
-.eyebrow { display: inline-flex; min-height: 1.8rem; align-items: center; border: var(--nb-border); border-radius: var(--nb-radius-pill); background: var(--nb-teal); padding: 0.2rem 0.65rem; font-size: 0.72rem; font-weight: 900; letter-spacing: 0.08em; }
+.eyebrow { display: inline-flex; min-height: 1.8rem; align-items: center; border: var(--nb-border); border-radius: var(--nb-radius-pill); background: var(--nb-teal); color: var(--nb-on-teal); padding: 0.2rem 0.65rem; font-size: 0.72rem; font-weight: 900; letter-spacing: 0.08em; }
 .header h1 { max-width: 20ch; margin: 0.85rem 0 0; font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 900; letter-spacing: -0.07em; line-height: .92; }
 .header p:last-child { max-width: 46rem; margin: 1rem 0 0; color: var(--nb-muted); font-weight: 550; line-height: 1.55; }
 .tabs { display: flex; gap: 0.5rem; overflow-x: auto; border-bottom: var(--nb-border); background: var(--nb-paper); padding: 0.7rem clamp(1rem, 3vw, 1.75rem); }
 .tabs button { min-height: 2.75rem; border: var(--nb-border); border-radius: var(--nb-radius-control); background: var(--nb-surface); box-shadow: var(--nb-shadow-small); padding: 0.5rem 0.9rem; color: var(--nb-ink); cursor: pointer; font: inherit; font-weight: 850; white-space: nowrap; }
 .tabs button[aria-selected="true"] { background: var(--nb-yellow); transform: translate(2px, 2px); box-shadow: none; }
-.tabs button:focus-visible { outline: 3px solid var(--nb-teal); outline-offset: 2px; }
+.tabs button:focus-visible { outline: 3px solid var(--nb-focus); outline-offset: 2px; }
 .chatPanel { min-height: 28rem; }
 @media (max-width: 40rem) {
   .shell { box-shadow: 3px 3px 0 var(--nb-ink); }

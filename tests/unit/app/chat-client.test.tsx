@@ -1,10 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ChatClient from "@/app/components/chat-client";
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -42,8 +43,11 @@ describe("ChatClient", () => {
 
     fireEvent.change(input, { target: { value: "Primero" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.getByText("Pensando…")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Enviar" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("status").textContent).toContain("Procesando tu solicitud…");
+    expect(screen.getByText("El asistente está preparando la respuesta y puede consultar herramientas.")).toBeTruthy();
+    expect(screen.getByTestId("chat-loading-skeleton").getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByRole("button", { name: "Procesando…" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Espera mientras se completa la respuesta.")).toBeTruthy();
     fireEvent.keyDown(input, { key: "Enter" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -52,6 +56,27 @@ describe("ChatClient", () => {
     fireEvent.change(input, { target: { value: "Una" } });
     fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
     expect((input as HTMLTextAreaElement).value).toBe("Una");
+  });
+
+  it("adds honest feedback after eight seconds and clears it with the response", async () => {
+    vi.useFakeTimers();
+    let resolveResponse: ((response: Response) => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { resolveResponse = resolve; })));
+    render(<ChatClient />);
+
+    fireEvent.change(screen.getByLabelText("Mensaje"), { target: { value: "Consulta lenta" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+    expect(screen.queryByText("La solicitud sigue en curso. Algunas consultas pueden tardar más de lo habitual.")).toBeNull();
+
+    act(() => { vi.advanceTimersByTime(8_000); });
+    expect(screen.getByText("La solicitud sigue en curso. Algunas consultas pueden tardar más de lo habitual.")).toBeTruthy();
+
+    await act(async () => {
+      resolveResponse?.(jsonResponse({ status: "completed", sessionId: "session-1", message: "Respuesta lista" }));
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Procesando tu solicitud…")).toBeNull();
+    expect(screen.getByText("Respuesta lista")).toBeTruthy();
   });
 
   it("renders a safe error and clears an expired session for the next request", async () => {
@@ -84,7 +109,7 @@ describe("ChatClient", () => {
     await screen.findByRole("alert");
     expect(screen.queryByText("Mantener este mensaje", { selector: ".messageUser p" })).toBeNull();
     expect((input as HTMLTextAreaElement).value).toBe("Mantener este mensaje");
-    expect(document.activeElement).toBe(input);
+    await waitFor(() => expect(document.activeElement).toBe(input));
   });
 
   it("keeps user messages and Host confirmation messages as literal text", async () => {

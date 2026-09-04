@@ -30,7 +30,7 @@
   border: var(--nb-border);
   border-radius: var(--nb-radius-pill);
   background: var(--nb-teal);
-  color: var(--nb-ink);
+  color: var(--nb-on-teal);
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -109,6 +109,7 @@
 
 .messageUser {
   background: var(--nb-teal);
+  color: var(--nb-on-teal);
 }
 
 .messageAssistant {
@@ -133,7 +134,7 @@
 .confirmationPending,
 .confirmationConfirming,
 .confirmationCancelling { background: var(--nb-yellow); }
-.confirmationConfirmed { background: var(--nb-teal); }
+.confirmationConfirmed { background: var(--nb-teal); color: var(--nb-on-teal); }
 .confirmationCancelled { background: var(--nb-paper); }
 .confirmationError { background: var(--nb-danger-surface); }
 
@@ -162,6 +163,7 @@
   border: 1px solid var(--nb-ink);
   border-radius: 0.35rem;
   background: var(--nb-paper);
+  color: var(--nb-ink);
   padding: 0.45rem 0.55rem;
 }
 
@@ -193,6 +195,7 @@
   border: var(--nb-border);
   border-radius: var(--nb-radius-control);
   background: var(--nb-paper);
+  color: var(--nb-ink);
 }
 
 .confirmationDetails summary {
@@ -254,17 +257,39 @@
   white-space: pre-wrap;
 }
 
-.thinking {
-  align-self: flex-start;
-  border: var(--nb-border);
+.loadingMessage { width: min(85%, 34rem); }
+
+.loadingTitle {
+  margin: 0;
+  font-weight: 850;
+}
+
+.loadingDescription {
+  margin: 0.45rem 0 0;
+  color: var(--nb-muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.loadingSkeleton {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+}
+
+.loadingSkeleton span {
+  display: block;
+  height: 0.55rem;
+  border: 1px solid var(--nb-ink);
   border-radius: var(--nb-radius-pill);
   background: var(--nb-yellow);
-  box-shadow: var(--nb-shadow-small);
-  color: var(--nb-ink);
-  padding: 0.35rem 0.7rem;
-  font-size: 0.82rem;
-  font-weight: 800;
+  animation: loadingPulse 1.4s ease-in-out infinite;
 }
+
+.loadingSkeleton span:nth-child(2) { width: 84%; animation-delay: 120ms; }
+.loadingSkeleton span:nth-child(3) { width: 62%; animation-delay: 240ms; }
+
+@keyframes loadingPulse { 50% { opacity: 0.45; } }
 
 .composer {
   margin: 0 clamp(1rem, 3vw, 1.75rem) clamp(1rem, 3vw, 1.75rem);
@@ -506,5 +531,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .loadingSkeleton span { animation: none; }
   .sendButton, .confirmButton, .cancelButton { transition: none; }
 }

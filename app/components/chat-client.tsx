@@ -47,6 +47,7 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState<ChatRequestState>("idle");
+  const [requestDelayed, setRequestDelayed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nextMessageId = useRef(1);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -61,6 +62,12 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
       restoreComposerFocus.current = false;
     }
   }, [composerBlocked, status]);
+
+  useEffect(() => {
+    if (status !== "sending_message") return;
+    const timer = window.setTimeout(() => setRequestDelayed(true), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [status]);
 
   const addMessage = (message: NewChatMessage) => {
     const id = nextMessageId.current++;
@@ -94,6 +101,7 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
     const message = draft.trim();
     if (!message) return;
     setError(null);
+    setRequestDelayed(false);
     requestInFlight.current = true;
     setStatus("sending_message");
     const submittedMessageId = addMessage({ role: "user", format: "plain", text: message });
@@ -110,7 +118,7 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
       removeMessage(submittedMessageId);
       restoreComposerFocus.current = true;
       setError(caught instanceof Error ? caught.message : "No fue posible completar la respuesta del chat.");
-    } finally { requestInFlight.current = false; setStatus("idle"); }
+    } finally { requestInFlight.current = false; setRequestDelayed(false); setStatus("idle"); }
   };
 
   const decide = async (message: ConfirmationMessage, decision: "confirm" | "cancel") => {
@@ -143,18 +151,18 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
   const content = <>
     {!embedded ? <header className={styles.header}><p className={styles.eyebrow}>FINANCE MCP</p><h1 className={styles.title}>Asistente financiero</h1><p className={styles.subtitle}>Consulta información de tu negocio o haz una pregunta general. Las operaciones de escritura requieren confirmación.</p></header> : null}
     <section className={styles.conversation} aria-label="Conversación">
-      {messages.length === 0 ? <div className={styles.emptyState}><p>Escribe una pregunta para iniciar la conversación.</p></div> : <ol className={styles.messages} aria-live="polite">
+      {messages.length === 0 ? <div className={styles.emptyState}><p>Escribe una pregunta para iniciar la conversación.</p></div> : <ol className={styles.messages}>
         {messages.map((message) => <li key={message.id} className={`${styles.messageRow} ${message.role === "user" ? styles.messageRowUser : styles.messageRowAssistant}`}>
-          {isConfirmationMessage(message) ? <WriteConfirmationCard messageId={message.id} operation={message.operation} state={message.confirmationState} stateMessage={message.stateMessage} onDecision={(decision) => void decide(message, decision)} /> : <article className={`${styles.message} ${message.role === "user" ? styles.messageUser : message.kind === "control" ? styles.messageControl : styles.messageAssistant}`}><p className={styles.messageLabel}>{message.role === "user" ? "Tú" : message.kind === "control" ? "Confirmación" : "Asistente"}</p>{message.format === "markdown" ? <AssistantMarkdown content={message.text} /> : <p className={styles.plainText}>{message.text}</p>}</article>}
+          {isConfirmationMessage(message) ? <WriteConfirmationCard messageId={message.id} operation={message.operation} state={message.confirmationState} stateMessage={message.stateMessage} onDecision={(decision) => void decide(message, decision)} /> : <article aria-live={message.role === "assistant" ? "polite" : undefined} className={`${styles.message} ${message.role === "user" ? styles.messageUser : message.kind === "control" ? styles.messageControl : styles.messageAssistant}`}><p className={styles.messageLabel}>{message.role === "user" ? "Tú" : message.kind === "control" ? "Confirmación" : "Asistente"}</p>{message.format === "markdown" ? <AssistantMarkdown content={message.text} /> : <p className={styles.plainText}>{message.text}</p>}</article>}
         </li>)}
-        {status === "sending_message" ? <li className={styles.thinking} role="status">Pensando…</li> : null}
+        {status === "sending_message" ? <li className={`${styles.messageRow} ${styles.messageRowAssistant}`}><article className={`${styles.message} ${styles.messageAssistant} ${styles.loadingMessage}`} role="status" aria-live="polite" aria-atomic="true"><p className={styles.messageLabel}>Asistente</p><p className={styles.loadingTitle}>Procesando tu solicitud…</p><p className={styles.loadingDescription}>{requestDelayed ? "La solicitud sigue en curso. Algunas consultas pueden tardar más de lo habitual." : "El asistente está preparando la respuesta y puede consultar herramientas."}</p><div className={styles.loadingSkeleton} data-testid="chat-loading-skeleton" aria-hidden="true"><span /><span /><span /></div></article></li> : null}
       </ol>}
     </section>
     <form className={styles.composer} onSubmit={submit}>
       {error ? <p role="alert" className={styles.error}>{error}</p> : null}
       <label className="sr-only" htmlFor="chat-message">Mensaje</label>
       <textarea ref={composerRef} id="chat-message" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={onKeyDown} disabled={status !== "idle" || composerBlocked} maxLength={4000} rows={3} placeholder="Escribe tu mensaje…" className={styles.textarea} />
-      <div className={styles.composerFooter}><p className={styles.hint}>{composerBlocked ? "Resuelve la operación pendiente para continuar." : "Enter para enviar · Shift+Enter para una nueva línea"}</p><button type="submit" disabled={status !== "idle" || composerBlocked || !draft.trim()} className={styles.sendButton}>Enviar</button></div>
+      <div className={styles.composerFooter}><p className={styles.hint}>{composerBlocked ? "Resuelve la operación pendiente para continuar." : status === "sending_message" ? "Espera mientras se completa la respuesta." : "Enter para enviar · Shift+Enter para una nueva línea"}</p><button type="submit" disabled={status !== "idle" || composerBlocked || !draft.trim()} className={styles.sendButton}>{status === "sending_message" ? "Procesando…" : "Enviar"}</button></div>
     </form>
   </>;
   if (embedded) return content;

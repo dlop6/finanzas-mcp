@@ -15,6 +15,7 @@ type PanelState =
 type ApiError = { error?: { message?: unknown } };
 type ServerFilter = "ALL" | "finance-mcp" | "filesystem-mcp" | "git-mcp";
 type MessageFilter = "ALL" | WebMcpLogEntry["messageType"];
+type VisibleEntry = { entry: WebMcpLogEntry; sourceIndex: number; key: string };
 
 function isResponse(value: unknown): value is WebMcpLogsResponse {
   if (typeof value !== "object" || value === null) return false;
@@ -32,6 +33,19 @@ function formatTimestamp(value: string): string {
   }).format(date);
 }
 
+function formatTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("es-GT", {
+    timeZone: "America/Guatemala",
+    timeStyle: "medium",
+  }).format(date);
+}
+
+function formatDuration(value: number): string {
+  return `${new Intl.NumberFormat("es-GT", { maximumFractionDigits: 1 }).format(value)} ms`;
+}
+
 function serverLabel(serverId: string): string {
   return serverId === "finance-mcp" ? "Finance MCP"
     : serverId === "filesystem-mcp" ? "Filesystem MCP"
@@ -45,6 +59,21 @@ function directionLabel(direction: WebMcpLogEntry["direction"]): string {
 
 function transportLabel(transport: WebMcpLogEntry["transport"]): string {
   return transport === "STREAMABLE_HTTP" ? "Streamable HTTP" : "STDIO";
+}
+
+function messageTypeLabel(messageType: WebMcpLogEntry["messageType"]): string {
+  if (messageType === "request") return "Solicitud";
+  if (messageType === "response") return "Respuesta";
+  if (messageType === "notification") return "Notificación";
+  return "Error";
+}
+
+function statusLabel(status: WebMcpLogEntry["status"]): string {
+  if (status === "SENT") return "Enviado";
+  if (status === "SUCCEEDED") return "Completado";
+  if (status === "REMOTE_ERROR") return "Error remoto";
+  if (status === "TRANSPORT_ERROR") return "Error de transporte";
+  return "Error de protocolo";
 }
 
 async function requestLogs(chatSessionId: string | null): Promise<WebMcpLogsResponse> {
@@ -71,34 +100,63 @@ function isError(entry: WebMcpLogEntry): boolean {
     || entry.status === "PROTOCOL_ERROR";
 }
 
-function LogEntry({ entry }: { entry: WebMcpLogEntry }) {
-  const open = isError(entry);
-  return <li className={`${styles.entry} ${open ? styles.entryError : ""}`}>
-    <div className={styles.entryTop}>
-      <time dateTime={entry.timestamp}>{formatTimestamp(entry.timestamp)}</time>
-      <span className={styles.status}>{entry.status}</span>
-    </div>
-    <dl className={styles.metadata}>
-      <div><dt>Servidor</dt><dd>{serverLabel(entry.serverId)}</dd></div>
-      <div><dt>Transporte</dt><dd>{transportLabel(entry.transport)}</dd></div>
-      <div><dt>Dirección</dt><dd>{directionLabel(entry.direction)}</dd></div>
-      <div><dt>Tipo</dt><dd>{entry.messageType}</dd></div>
-      {entry.method !== undefined ? <div><dt>Método</dt><dd className={styles.mono}>{entry.method}</dd></div> : null}
-      {entry.requestId !== undefined ? <div><dt>Request ID</dt><dd className={styles.mono}>Request ID: {String(entry.requestId)}</dd></div> : null}
-      {entry.durationMs !== undefined ? <div><dt>Duración</dt><dd>{entry.durationMs} ms</dd></div> : null}
-    </dl>
-    <details className={styles.payload} open={open}>
-      <summary>Ver payload JSON-RPC</summary>
-      <pre><code>{entry.payload}</code></pre>
-    </details>
-  </li>;
+function entryKey(context: string, entry: WebMcpLogEntry, sourceIndex: number): string {
+  return `${context}:${entry.timestamp}:${String(entry.requestId ?? entry.messageType)}:${sourceIndex}`;
+}
+
+function reconcileExpandedPayloads(current: ReadonlySet<string>, knownEntries: ReadonlySet<string>, data: WebMcpLogsResponse): Set<string> {
+  const valid = new Set<string>();
+  const errors = new Set<string>();
+  for (const group of data.groups) {
+    group.entries.forEach((entry, index) => {
+      const key = entryKey(group.context, entry, index);
+      valid.add(key);
+      if (isError(entry) && !knownEntries.has(key)) errors.add(key);
+    });
+  }
+  return new Set([...current].filter((key) => valid.has(key)).concat([...errors]));
+}
+
+function LogTable({ label, context, entries, expandedPayloads, onToggle }: { label: string; context: string; entries: VisibleEntry[]; expandedPayloads: ReadonlySet<string>; onToggle: (key: string) => void }) {
+  return <div className={styles.tableRegion} role="region" aria-label={`Tabla de ${label}`} tabIndex={0}>
+    <table className={styles.table}>
+      <caption className="sr-only">Eventos de {label}</caption>
+      <thead><tr><th scope="col">Hora</th><th scope="col">Evento</th><th scope="col">Resultado</th></tr></thead>
+      {entries.map(({ entry, sourceIndex, key }) => {
+        const expanded = expandedPayloads.has(key);
+        const payloadId = `mcp-log-payload-${context}-${sourceIndex}`;
+        const method = entry.method ?? messageTypeLabel(entry.messageType);
+        const action = expanded ? "Ocultar" : "Ver";
+        return <tbody key={key} className={isError(entry) ? styles.errorRows : undefined}>
+          <tr className={styles.eventRow}>
+            <td className={styles.timeCell}><time dateTime={entry.timestamp} title={formatTimestamp(entry.timestamp)}><span aria-hidden="true">{formatTime(entry.timestamp)}</span><span className="sr-only">{formatTimestamp(entry.timestamp)}</span></time></td>
+            <td className={styles.eventCell}>
+              <strong>{serverLabel(entry.serverId)}</strong>
+              <span>{messageTypeLabel(entry.messageType)}{entry.method !== undefined ? <> · <code>{entry.method}</code></> : null}</span>
+              <span><span>{directionLabel(entry.direction)}</span><span aria-hidden="true"> · </span><span>{transportLabel(entry.transport)}</span></span>
+              {entry.requestId !== undefined ? <code>Request ID: {String(entry.requestId)}</code> : null}
+            </td>
+            <td className={styles.resultCell}>
+              <span className={styles.statusLabel}>{statusLabel(entry.status)}</span>
+              <code className={styles.statusCode}>{entry.status}</code>
+              {entry.durationMs !== undefined ? <span>{formatDuration(entry.durationMs)}</span> : null}
+              <button type="button" className={styles.payloadButton} aria-expanded={expanded} aria-controls={payloadId} onClick={() => onToggle(key)} aria-label={`${action} payload de ${method}, ${messageTypeLabel(entry.messageType)}${entry.requestId !== undefined ? `, Request ID ${String(entry.requestId)}` : ""}`}>{action} payload</button>
+            </td>
+          </tr>
+          {expanded ? <tr className={styles.payloadRow}><td colSpan={3}><div id={payloadId} className={styles.payload}><pre><code>{entry.payload}</code></pre></div></td></tr> : null}
+        </tbody>;
+      })}
+    </table>
+  </div>;
 }
 
 export default function McpLogsPanel({ chatSessionId, active }: { chatSessionId: string | null; active: boolean }) {
   const [state, setState] = useState<PanelState>({ kind: "idle", data: null, warning: null });
   const [server, setServer] = useState<ServerFilter>("ALL");
   const [messageType, setMessageType] = useState<MessageFilter>("ALL");
+  const [expandedPayloads, setExpandedPayloads] = useState<Set<string>>(() => new Set());
   const inFlight = useRef(false);
+  const knownEntries = useRef<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     if (inFlight.current) return;
@@ -108,6 +166,9 @@ export default function McpLogsPanel({ chatSessionId, active }: { chatSessionId:
       : { kind: "loading", data: null, warning: null });
     try {
       const data = await requestLogs(chatSessionId);
+      const previouslyKnownEntries = knownEntries.current;
+      setExpandedPayloads((current) => reconcileExpandedPayloads(current, previouslyKnownEntries, data));
+      knownEntries.current = new Set(data.groups.flatMap((group) => group.entries.map((entry, index) => entryKey(group.context, entry, index))));
       setState({ kind: "ready", data, warning: null });
     } catch (error) {
       const warning = error instanceof Error ? error.message : "No fue posible obtener los logs MCP.";
@@ -127,8 +188,9 @@ export default function McpLogsPanel({ chatSessionId, active }: { chatSessionId:
 
   const groups = useMemo(() => state.data?.groups.map((group) => ({
     ...group,
-    entries: group.entries.filter((entry) => (server === "ALL" || entry.serverId === server)
-      && (messageType === "ALL" || entry.messageType === messageType)),
+    entries: group.entries.map((entry, sourceIndex) => ({ entry, sourceIndex, key: entryKey(group.context, entry, sourceIndex) }))
+      .filter(({ entry }) => (server === "ALL" || entry.serverId === server)
+        && (messageType === "ALL" || entry.messageType === messageType)),
   })) ?? [], [messageType, server, state.data]);
   const count = groups.reduce((total, group) => total + group.entries.length, 0);
   const filtersActive = server !== "ALL" || messageType !== "ALL";
@@ -146,12 +208,12 @@ export default function McpLogsPanel({ chatSessionId, active }: { chatSessionId:
     {state.kind === "stale" ? <p className={styles.warning} role="alert">{state.warning}</p> : null}
     <div className={styles.filters} aria-label="Filtros de logs MCP">
       <label>Servidor<select value={server} onChange={(event) => setServer(event.target.value as ServerFilter)}><option value="ALL">Todos los servidores</option><option value="finance-mcp">Finance MCP</option><option value="filesystem-mcp">Filesystem MCP</option><option value="git-mcp">Git MCP</option></select></label>
-      <label>Tipo de mensaje<select value={messageType} onChange={(event) => setMessageType(event.target.value as MessageFilter)}><option value="ALL">Todos los tipos</option><option value="request">request</option><option value="response">response</option><option value="notification">notification</option><option value="error">error</option></select></label>
+      <label>Tipo de mensaje<select value={messageType} onChange={(event) => setMessageType(event.target.value as MessageFilter)}><option value="ALL">Todos los tipos</option><option value="request">Solicitudes</option><option value="response">Respuestas</option><option value="notification">Notificaciones</option><option value="error">Errores</option></select></label>
       <p>{count} {count === 1 ? "evento visible" : "eventos visibles"}</p>
     </div>
     {groups.map((group) => <section key={group.context} className={styles.group} aria-labelledby={`mcp-logs-${group.context}`}>
       <div className={styles.groupHeading}><div><p className={styles.context}>{group.context}</p><h3 id={`mcp-logs-${group.context}`}>{group.label}</h3></div><p>{group.entries.length}</p></div>
-      {group.entries.length > 0 ? <ol className={styles.entries}>{group.entries.map((entry, index) => <LogEntry key={`${entry.timestamp}-${entry.requestId ?? "notification"}-${index}`} entry={entry} />)}</ol> : <p className={styles.empty}>{filtersActive ? "No hay eventos que coincidan con los filtros seleccionados." : group.context === "CHAT" && !chatSessionId ? "Inicia una conversación para ver sus interacciones MCP." : "Aún no hay interacciones para mostrar."}</p>}
+      {group.entries.length > 0 ? <LogTable label={group.label} context={group.context} entries={group.entries} expandedPayloads={expandedPayloads} onToggle={(key) => setExpandedPayloads((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} /> : <p className={styles.empty}>{filtersActive ? "No hay eventos que coincidan con los filtros seleccionados." : group.context === "CHAT" && !chatSessionId ? "Inicia una conversación para ver sus interacciones MCP." : "Aún no hay interacciones para mostrar."}</p>}
     </section>)}
   </section>;
 }
