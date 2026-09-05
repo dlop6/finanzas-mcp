@@ -10,7 +10,7 @@ Finance MCP is a local Model Context Protocol server for the financial administr
 - Authoritative calculations: Finance MCP services. An LLM may explain results but must not calculate or override them.
 - Currency: GTQ only.
 - Canonical demo dataset date: `2026-08-08`.
-- Productive catalog: 25 tools, consisting of 15 writes and 10 reads.
+- Productive catalog: 26 tools, consisting of 16 writes and 10 reads.
 
 This document specifies the public wire contract. It does not expose Prisma models, repository interfaces, handlers, credentials, or other server internals.
 
@@ -280,6 +280,7 @@ No error includes SQL, credentials, `DATABASE_URL`, stack traces, or internal Pr
 | 23 | `project_cash_flow` | Read |
 | 24 | `evaluate_purchase_viability` | Read |
 | 25 | `get_transaction_reference_data` | Read |
+| 26 | `record_transactions_batch` | Write |
 
 ## 6. Domain entity map
 
@@ -322,6 +323,22 @@ Purpose: return only the account labels and categories compatible with a propose
 | `type` | Yes | `INCOME` or `EXPENSE`. |
 
 The structured result contains `currency`, ordered `accounts` with `id`, `name`, and `type`, and ordered compatible `categories` with `id`, `name`, and `type`. It omits balances, transactions, timestamps, and internal business fields. The Host uses this read to translate a user's named selection into the IDs required by `record_income` or `record_expense`.
+
+### `record_transactions_batch`
+
+Purpose: record a homogeneous batch of income or expense transactions atomically. Operation: **Write**.
+
+| Parameter | Required | Type and restrictions |
+|---|---|---|
+| `type` | Yes | `INCOME` or `EXPENSE`; applies to every row. |
+| `transactions` | Yes | Closed array with 2 to 25 rows, preserved in input order. |
+| `transactions[].accountId` | Yes | Integer, minimum `1`; account must exist. |
+| `transactions[].categoryId` | Yes | Integer, minimum `1`; category must match the batch type. |
+| `transactions[].amount` | Yes | Positive money string. |
+| `transactions[].date` | Yes | Strict `YYYY-MM-DD`. |
+| `transactions[].description` | No | Non-empty string after trimming. |
+
+Finance MCP validates the full batch and performs all inserts in one database transaction. If any row is rejected, no row is persisted. The structured result contains `currency`, `type`, and the created transactions in the original order. It omits a recalculated balance and batch totals.
 
 ### 8.1 `record_income`
 

@@ -7,6 +7,7 @@ import {
   HostWriteOperationDescriber,
   type WriteOperationDescriber,
 } from "@/host/confirmation";
+import type { WriteOperationPresentation } from "@/host/confirmation/finance-write-describer";
 import {
   ConversationSessionError,
   type ConversationSessionSnapshot,
@@ -41,6 +42,10 @@ function requireUserMessage(value: unknown): string {
     throw new ConversationSessionError("INVALID_USER_MESSAGE", "The user message must contain text.");
   }
   return value.trim();
+}
+
+function presentation(value: string | WriteOperationPresentation): WriteOperationPresentation {
+  return typeof value === "string" ? { description: value } : structuredClone(value);
 }
 
 export function createSessionChatService(options: CreateSessionChatServiceOptions): SessionChatService {
@@ -117,17 +122,18 @@ export function createSessionChatService(options: CreateSessionChatServiceOption
         });
 
         if (result.status === "confirmation_required") {
-          const description = await writeOperationDescriber.describe(result.pendingOperation, { sessionId: normalizedSessionId });
+          const described = presentation(await writeOperationDescriber.describe(result.pendingOperation, { sessionId: normalizedSessionId }));
           // Keep the exact proposed tool call outside the model history until the session receives an explicit decision.
           const snapshot = options.sessionStore.setPendingConfirmation(normalizedSessionId, {
             operation: result.pendingOperation,
-            description,
+            description: described.description,
+            ...(described.preview ? { preview: described.preview } : {}),
             turnMessages: result.turnMessages,
           });
           return {
             status: "confirmation_required",
             pendingOperation: snapshot.pendingOperation!,
-            message: confirmationRequiredMessage(description),
+            message: confirmationRequiredMessage(described.description),
           };
         }
 

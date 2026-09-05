@@ -9,6 +9,12 @@ const positiveId = { type: "integer", minimum: 1 } as const;
 const money = { type: "string", pattern: MONEY_PATTERN } as const;
 const date = { type: "string", pattern: DATE_PATTERN } as const;
 const description = { type: "string", minLength: 1 } as const;
+const batchTransaction = {
+  type: "object",
+  additionalProperties: false,
+  required: ["accountId", "categoryId", "amount", "date"],
+  properties: { accountId: positiveId, categoryId: positiveId, amount: money, date, description },
+} as const;
 
 function success(text: string, structuredContent: Record<string, unknown>): McpCallToolResult {
   return { content: [{ type: "text", text }], structuredContent };
@@ -32,6 +38,14 @@ export function createTransactionTools(service: TransactionService): FinanceTool
       name: "record_expense", description: "Record an expense transaction.", isWriteOperation: true,
       inputSchema: { type: "object", additionalProperties: false, required: ["accountId", "categoryId", "amount", "date"], properties: { accountId: positiveId, categoryId: positiveId, amount: money, date, description } },
       handler: (args) => guarded(() => service.recordExpense(args as never), (result) => success("Expense recorded.", result))(),
+    },
+    {
+      name: "record_transactions_batch", description: "Record a homogeneous batch of 2 to 25 income or expense transactions atomically.", isWriteOperation: true,
+      inputSchema: {
+        type: "object", additionalProperties: false, required: ["type", "transactions"],
+        properties: { type: { type: "string", enum: ["INCOME", "EXPENSE"] }, transactions: { type: "array", minItems: 2, maxItems: 25, items: batchTransaction } },
+      },
+      handler: (args) => guarded(() => service.recordBatch(args as never), (result) => success("Transaction batch recorded.", result))(),
     },
     {
       name: "list_transactions", description: "List financial transactions.", isWriteOperation: false,

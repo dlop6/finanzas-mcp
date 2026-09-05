@@ -66,7 +66,7 @@ export async function runRemoteMcpProbe(endpointValue: string, request: RemoteMc
     if (notification.status !== 202) throw new RemoteMcpProbeError("HTTP_ERROR");
     const tools = await readJson(await request(endpoint, { method: "POST", headers, body: jsonRequest(2, "tools/list", {}) }));
     const definitions = (tools.result as { tools?: unknown } | undefined)?.tools;
-    if (!Array.isArray(definitions) || definitions.length !== 25 || "error" in tools) throw new RemoteMcpProbeError("INVALID_RESPONSE");
+    if (!Array.isArray(definitions) || definitions.length !== 26 || "error" in tools) throw new RemoteMcpProbeError("INVALID_RESPONSE");
     const balance = await readJson(await request(endpoint, { method: "POST", headers, body: jsonRequest(3, "tools/call", { name: "get_current_balance", arguments: {} }) }));
     if ("error" in balance || (balance.result as { isError?: unknown } | undefined)?.isError === true) throw new RemoteMcpProbeError("INVALID_RESPONSE");
   } finally {
@@ -81,7 +81,7 @@ const isEntrypoint = process.argv[1] !== undefined
 
 if (isEntrypoint) {
   runRemoteMcpProbe(process.argv[2] ?? "")
-    .then(() => process.stdout.write("Remote MCP capture probe completed: 25 tools and one read operation.\n"))
+    .then(() => process.stdout.write("Remote MCP capture probe completed: 26 tools and one read operation.\n"))
     .catch((error: unknown) => {
       const code = error instanceof RemoteMcpProbeError ? error.code : "INVALID_RESPONSE";
       process.stderr.write(`Remote MCP capture probe failed: ${code}.\n`);

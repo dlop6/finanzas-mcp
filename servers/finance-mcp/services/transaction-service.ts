@@ -6,9 +6,12 @@ import { transactionResult, type MoneyResult, type TransactionResult } from "./r
 import { parseDate, parseMoney, trimDescription } from "./validation";
 
 type RecordTransactionInput = { accountId: number; categoryId: number; amount: string; date: string; description?: string };
+type BatchTransactionInput = { accountId: number; categoryId: number; amount: string; date: string; description?: string };
+type RecordBatchInput = { type: TransactionType; transactions: BatchTransactionInput[] };
 type ListInput = { startDate?: string; endDate?: string; type?: TransactionType; categoryId?: number; accountId?: number };
 type UpdateInput = { transactionId: number; accountId?: number; categoryId?: number; amount?: string; date?: string; description?: string };
 export type TransactionMutationResult = { transaction: TransactionResult; currentBalance: MoneyResult };
+export type TransactionBatchMutationResult = { currency: "GTQ"; type: TransactionType; transactions: TransactionResult[] };
 
 export class TransactionService {
   constructor(
@@ -19,6 +22,27 @@ export class TransactionService {
 
   recordIncome(input: RecordTransactionInput): Promise<TransactionMutationResult> { return this.record(input, "INCOME"); }
   recordExpense(input: RecordTransactionInput): Promise<TransactionMutationResult> { return this.record(input, "EXPENSE"); }
+
+  async recordBatch(input: RecordBatchInput): Promise<TransactionBatchMutationResult> {
+    const transactions = input.transactions.map((transaction) => ({ ...transaction }));
+    if (transactions.length < 2 || transactions.length > 25) throw new FinanceDomainError("A transaction batch must contain between 2 and 25 transactions.");
+    const prepared = [] as Array<{ accountId: number; categoryId: number; type: TransactionType; amount: ReturnType<typeof parseMoney>; date: Date; description?: string }>;
+    for (const transaction of transactions) {
+      const category = await this.business.getCategory(transaction.categoryId);
+      if (category.type !== input.type) throw new FinanceDomainError("Category type must match the transaction type.");
+      await this.business.getAccount(transaction.accountId);
+      prepared.push({
+        accountId: transaction.accountId,
+        categoryId: transaction.categoryId,
+        type: input.type,
+        amount: parseMoney(transaction.amount),
+        date: parseDate(transaction.date),
+        ...(transaction.description === undefined ? {} : { description: trimDescription(transaction.description) }),
+      });
+    }
+    const created = await this.transactions.createBatch(prepared);
+    return { currency: "GTQ", type: input.type, transactions: created.map(transactionResult) };
+  }
 
   async listTransactions(input: ListInput): Promise<TransactionResult[]> {
     const startDate = input.startDate === undefined ? undefined : parseDate(input.startDate, "Start date");

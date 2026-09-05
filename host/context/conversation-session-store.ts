@@ -1,5 +1,6 @@
 import type { DeepSeekChatMessage, DeepSeekToolCall } from "@/host/llm";
 import type { PendingWriteOperation } from "@/host/orchestration/chat-orchestrator";
+import type { TransactionBatchPreview } from "@/host/confirmation/finance-write-describer";
 import { isConversationSummary, type ConversationSummary } from "./context-compactor";
 
 export type SessionId = string;
@@ -48,6 +49,7 @@ type ConversationSession = {
 export type PendingWriteConfirmation = {
   operation: PendingWriteOperation;
   description: string;
+  preview?: TransactionBatchPreview;
   turnMessages: DeepSeekChatMessage[];
 };
 
@@ -57,6 +59,7 @@ export type PendingWriteConfirmationSnapshot = {
   toolName: string;
   arguments: Record<string, unknown>;
   description: string;
+  preview?: TransactionBatchPreview;
 };
 
 export type ConversationSessionStore = {
@@ -272,6 +275,7 @@ export class InMemoryConversationSessionStore implements ConversationSessionStor
         toolName: session.pendingConfirmation.operation.toolName,
         arguments: structuredClone(session.pendingConfirmation.operation.arguments),
         description: session.pendingConfirmation.description,
+        ...(session.pendingConfirmation.preview ? { preview: structuredClone(session.pendingConfirmation.preview) } : {}),
       } : null,
     };
   }

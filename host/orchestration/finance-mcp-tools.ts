@@ -6,6 +6,7 @@ export const FINANCE_MCP_SERVER_ID = "finance-mcp";
 export const financeMcpToolMetadata = {
   record_income: { isWriteOperation: true },
   record_expense: { isWriteOperation: true },
+  record_transactions_batch: { isWriteOperation: true },
   get_transaction_reference_data: { isWriteOperation: false },
   list_transactions: { isWriteOperation: false },
   update_transaction: { isWriteOperation: true },

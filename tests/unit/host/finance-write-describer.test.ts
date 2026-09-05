@@ -7,9 +7,9 @@ import {
 const describer = new FinanceWriteOperationDescriber();
 
 describe("Finance write operation descriptions", () => {
-  it("covers exactly the 15 registered Finance MCP writes", () => {
+  it("covers exactly the 16 registered Finance MCP writes", () => {
     expect(financeWriteToolNames).toEqual([
-      "record_income", "record_expense", "update_transaction", "delete_transaction",
+      "record_income", "record_expense", "record_transactions_batch", "update_transaction", "delete_transaction",
       "record_debt", "update_debt", "mark_debt_paid", "delete_debt",
       "record_receivable", "update_receivable", "mark_receivable_collected", "delete_receivable",
       "create_product", "update_product", "record_inventory_movement",

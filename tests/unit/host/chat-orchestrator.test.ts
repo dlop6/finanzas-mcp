@@ -26,6 +26,12 @@ const writeTool: McpTool = {
   inputSchema: { type: "object", additionalProperties: false, properties: {} },
 };
 
+const batchWriteTool: McpTool = {
+  name: "record_transactions_batch",
+  description: "Records a batch.",
+  inputSchema: { type: "object", additionalProperties: false, properties: {} },
+};
+
 function response(overrides: Partial<DeepSeekChatResult> = {}): DeepSeekChatResult {
   return {
     content: "Final answer.",
@@ -40,10 +46,11 @@ async function registryWith(
   tools: McpTool[],
   client: McpToolClient,
   writes: readonly string[] = [],
+  serverId = "test-mcp",
 ): Promise<HostMcpToolRegistry> {
   const registry = new HostMcpToolRegistry();
   await registry.registerServer({
-    serverId: "test-mcp",
+    serverId,
     client: { ...client, toolsList: vi.fn(async () => ({ tools })) },
     metadata: Object.fromEntries(tools.map((tool) => [tool.name, { isWriteOperation: writes.includes(tool.name) }])),
   });
@@ -228,6 +235,23 @@ describe("chat orchestration", () => {
 
     await expect(createChatOrchestrator({ deepSeekClient: deepSeek, toolRegistry: registry }).run(input)).rejects.toMatchObject({
       code: "UNSUPPORTED_WRITE_BATCH",
+    });
+    expect(client.toolsCall).not.toHaveBeenCalled();
+  });
+
+  it("normalizes homogeneous transaction writes into one pending batch", async () => {
+    const client = toolClient();
+    const registry = await registryWith([writeTool, batchWriteTool], client, ["record_income", "record_transactions_batch"], "finance-mcp");
+    const deepSeek = llm(response({
+      toolCalls: [
+        { id: "one", type: "function", function: { name: "record_income", arguments: '{"accountId":1,"categoryId":1,"amount":"10.00","date":"2026-08-10"}' } },
+        { id: "two", type: "function", function: { name: "record_income", arguments: '{"accountId":2,"categoryId":2,"amount":"20.00","date":"2026-08-11"}' } },
+      ],
+    }));
+    const result = await createChatOrchestrator({ deepSeekClient: deepSeek, toolRegistry: registry }).run(input);
+    expect(result).toMatchObject({
+      status: "confirmation_required",
+      pendingOperation: { toolName: "record_transactions_batch", arguments: { type: "INCOME", transactions: [{ amount: "10.00" }, { amount: "20.00" }] } },
     });
     expect(client.toolsCall).not.toHaveBeenCalled();
   });

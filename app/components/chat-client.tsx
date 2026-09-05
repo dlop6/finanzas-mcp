@@ -6,7 +6,8 @@ import WriteConfirmationCard, { type ConfirmationState, type PendingOperationVie
 import styles from "./chat-client.module.css";
 
 type ConfirmationMessage = { id: number; role: "assistant"; format: "plain"; kind: "confirmation"; text: string; operation: PendingOperationView; confirmationState: ConfirmationState; stateMessage?: string };
-type ChatMessage = { id: number; role: "user"; format: "plain"; text: string } | { id: number; role: "assistant"; format: "markdown" | "plain"; kind: "model" | "control"; text: string } | ConfirmationMessage;
+type UserMessage = { id: number; role: "user"; format: "plain"; text: string; delivery?: "failed" };
+type ChatMessage = UserMessage | { id: number; role: "assistant"; format: "markdown" | "plain"; kind: "model" | "control"; text: string } | ConfirmationMessage;
 type NewChatMessage =
   | { role: "user"; format: "plain"; text: string }
   | { role: "assistant"; format: "markdown" | "plain"; kind: "model" | "control"; text: string }
@@ -14,14 +15,32 @@ type NewChatMessage =
 type ChatRequestState = "idle" | "sending_message" | "confirming" | "cancelling";
 type ApiSuccess =
   | { status: "completed"; sessionId: string; message: string }
+  | { status: "confirmation_resolved"; sessionId: string; outcome: "succeeded" | "rejected" | "unknown"; message: string }
   | { status: "confirmation_required"; sessionId: string; message: string; pendingOperation: PendingOperationView }
   | { status: "cancelled"; sessionId: string; message: string };
 type ApiError = { error: { code: string; message: string }; sessionId?: string };
 
+function isTransactionBatchPreview(value: unknown): value is PendingOperationView["preview"] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const preview = value as Record<string, unknown>;
+  return preview.kind === "transaction_batch"
+    && (preview.transactionType === "INCOME" || preview.transactionType === "EXPENSE")
+    && preview.currency === "GTQ"
+    && Array.isArray(preview.items)
+    && preview.items.every((item) => {
+      if (typeof item !== "object" || item === null || Array.isArray(item)) return false;
+      const row = item as Record<string, unknown>;
+      return typeof row.accountName === "string" && typeof row.categoryName === "string"
+        && typeof row.amount === "string" && typeof row.date === "string"
+        && (row.description === undefined || typeof row.description === "string");
+    });
+}
+
 function isPendingOperation(value: unknown): value is PendingOperationView {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const operation = value as Record<string, unknown>;
-  return typeof operation.serverId === "string" && typeof operation.toolName === "string" && typeof operation.description === "string" && typeof operation.arguments === "object" && operation.arguments !== null && !Array.isArray(operation.arguments);
+  return typeof operation.serverId === "string" && typeof operation.toolName === "string" && typeof operation.description === "string" && typeof operation.arguments === "object" && operation.arguments !== null && !Array.isArray(operation.arguments)
+    && (operation.preview === undefined || isTransactionBatchPreview(operation.preview));
 }
 
 function isApiSuccess(value: unknown): value is ApiSuccess {
@@ -29,6 +48,7 @@ function isApiSuccess(value: unknown): value is ApiSuccess {
   const response = value as Record<string, unknown>;
   if (typeof response.sessionId !== "string" || typeof response.message !== "string") return false;
   if (response.status === "completed" || response.status === "cancelled") return true;
+  if (response.status === "confirmation_resolved") return response.outcome === "succeeded" || response.outcome === "rejected" || response.outcome === "unknown";
   return response.status === "confirmation_required" && isPendingOperation(response.pendingOperation);
 }
 
@@ -76,7 +96,7 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
     return id;
   };
 
-  const removeMessage = (id: number) => setMessages((current) => current.filter((message) => message.id !== id));
+  const markUserMessageFailed = (id: number) => setMessages((current) => current.map((message) => message.role === "user" && message.id === id ? { ...message, delivery: "failed" } : message));
 
   const updateConfirmation = (id: number, update: Partial<Pick<ConfirmationMessage, "confirmationState" | "text" | "operation" | "stateMessage">>) => {
     setMessages((current) => current.map((message) => isConfirmationMessage(message) && message.id === id ? { ...message, ...update, operation: update.operation ? structuredClone(update.operation) : message.operation } : message));
@@ -115,7 +135,7 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
       else if (body.status === "confirmation_required") addMessage({ role: "assistant", format: "plain", kind: "confirmation", text: body.message, operation: structuredClone(body.pendingOperation), confirmationState: "pending" });
       else addMessage({ role: "assistant", format: "plain", kind: "control", text: body.message });
     } catch (caught) {
-      removeMessage(submittedMessageId);
+      markUserMessageFailed(submittedMessageId);
       restoreComposerFocus.current = true;
       setError(caught instanceof Error ? caught.message : "No fue posible completar la respuesta del chat.");
     } finally { requestInFlight.current = false; setRequestDelayed(false); setStatus("idle"); }
@@ -133,6 +153,12 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
       setSessionId(body.sessionId);
       onSessionIdChange?.(body.sessionId);
       if (body.status === "completed") { updateConfirmation(message.id, { confirmationState: "confirmed" }); addMessage({ role: "assistant", format: "markdown", kind: "model", text: body.message }); restoreComposerFocus.current = true; }
+      else if (body.status === "confirmation_resolved") {
+        const confirmationState: ConfirmationState = body.outcome === "succeeded" ? "confirmed" : body.outcome;
+        updateConfirmation(message.id, { confirmationState, stateMessage: body.outcome === "succeeded" ? undefined : body.message });
+        if (body.outcome === "succeeded") addMessage({ role: "assistant", format: "markdown", kind: "model", text: body.message });
+        restoreComposerFocus.current = true;
+      }
       else if (body.status === "cancelled") { updateConfirmation(message.id, { confirmationState: "cancelled" }); restoreComposerFocus.current = true; }
       else updateConfirmation(message.id, { confirmationState: "pending", text: body.message, operation: structuredClone(body.pendingOperation) });
     } catch (caught) {
@@ -153,7 +179,7 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
     <section className={styles.conversation} aria-label="Conversación">
       {messages.length === 0 ? <div className={styles.emptyState}><p>Escribe una pregunta para iniciar la conversación.</p></div> : <ol className={styles.messages}>
         {messages.map((message) => <li key={message.id} className={`${styles.messageRow} ${message.role === "user" ? styles.messageRowUser : styles.messageRowAssistant}`}>
-          {isConfirmationMessage(message) ? <WriteConfirmationCard messageId={message.id} operation={message.operation} state={message.confirmationState} stateMessage={message.stateMessage} onDecision={(decision) => void decide(message, decision)} /> : <article aria-live={message.role === "assistant" ? "polite" : undefined} className={`${styles.message} ${message.role === "user" ? styles.messageUser : message.kind === "control" ? styles.messageControl : styles.messageAssistant}`}><p className={styles.messageLabel}>{message.role === "user" ? "Tú" : message.kind === "control" ? "Confirmación" : "Asistente"}</p>{message.format === "markdown" ? <AssistantMarkdown content={message.text} /> : <p className={styles.plainText}>{message.text}</p>}</article>}
+          {isConfirmationMessage(message) ? <WriteConfirmationCard messageId={message.id} operation={message.operation} state={message.confirmationState} stateMessage={message.stateMessage} onDecision={(decision) => void decide(message, decision)} /> : <article aria-live={message.role === "assistant" ? "polite" : undefined} className={`${styles.message} ${message.role === "user" ? styles.messageUser : message.kind === "control" ? styles.messageControl : styles.messageAssistant}`}><p className={styles.messageLabel}>{message.role === "user" ? "Tú" : message.kind === "control" ? "Confirmación" : "Asistente"}</p>{message.format === "markdown" ? <AssistantMarkdown content={message.text} /> : <p className={styles.plainText}>{message.text}</p>}{message.role === "user" && message.delivery === "failed" ? <p className={styles.failedMessageNote} role="status">No procesado. <button type="button" onClick={() => { setDraft(message.text); composerRef.current?.focus(); }}>Editar mensaje</button></p> : null}</article>}
         </li>)}
         {status === "sending_message" ? <li className={`${styles.messageRow} ${styles.messageRowAssistant}`}><article className={`${styles.message} ${styles.messageAssistant} ${styles.loadingMessage}`} role="status" aria-live="polite" aria-atomic="true"><p className={styles.messageLabel}>Asistente</p><p className={styles.loadingTitle}>Procesando tu solicitud…</p><p className={styles.loadingDescription}>{requestDelayed ? "La solicitud sigue en curso. Algunas consultas pueden tardar más de lo habitual." : "El asistente está preparando la respuesta y puede consultar herramientas."}</p><div className={styles.loadingSkeleton} data-testid="chat-loading-skeleton" aria-hidden="true"><span /><span /><span /></div></article></li> : null}
       </ol>}

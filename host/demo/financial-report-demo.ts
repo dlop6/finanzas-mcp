@@ -91,7 +91,7 @@ export function createFinancialReportDemo(options: CreateFinancialReportDemoOpti
       const commitMessage = `docs: add financial report ${mark}`;
       if (!isWithin(gitDemoPath, reportPath)) throw new FinancialReportDemoError("PREFLIGHT_FAILED", "The report path is outside the demo repository.");
       const allTools = options.registry.list();
-      if (allTools.length !== 51 || allTools.filter((tool) => tool.isWriteOperation).length !== 24) throw new FinancialReportDemoError("INVALID_CATALOG", "The local MCP catalog is incomplete.");
+      if (allTools.length !== 52 || allTools.filter((tool) => tool.isWriteOperation).length !== 25) throw new FinancialReportDemoError("INVALID_CATALOG", "The local MCP catalog is incomplete.");
 
       const allowed = await options.filesystemClient.toolsCall("list_allowed_directories");
       if (!textContent(allowed).includes(resolve(options.projectRoot, "docs/generated"))) throw new FinancialReportDemoError("PREFLIGHT_FAILED", "The Filesystem MCP sandbox is unavailable.");

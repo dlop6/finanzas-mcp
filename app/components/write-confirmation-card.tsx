@@ -8,9 +8,17 @@ export type PendingOperationView = {
   toolName: string;
   arguments: Record<string, unknown>;
   description: string;
+  preview?: TransactionBatchPreview;
 };
 
-export type ConfirmationState = "pending" | "confirming" | "cancelling" | "confirmed" | "cancelled" | "error";
+export type TransactionBatchPreview = {
+  kind: "transaction_batch";
+  transactionType: "INCOME" | "EXPENSE";
+  currency: "GTQ";
+  items: Array<{ accountName: string; categoryName: string; amount: string; date: string; description?: string }>;
+};
+
+export type ConfirmationState = "pending" | "confirming" | "cancelling" | "confirmed" | "rejected" | "unknown" | "cancelled" | "error";
 
 type WriteConfirmationCardProps = {
   messageId: number;
@@ -27,7 +35,9 @@ const serverLabels: Record<string, string> = {
 };
 
 function stateLabel(state: ConfirmationState): string {
-  if (state === "confirmed") return "CONFIRMADA";
+  if (state === "confirmed") return "EJECUTADA";
+  if (state === "rejected") return "RECHAZADA";
+  if (state === "unknown") return "RESULTADO INCIERTO";
   if (state === "cancelled") return "CANCELADA";
   if (state === "error") return "ESTADO NO DISPONIBLE";
   return "CONFIRMACIÓN REQUERIDA";
@@ -60,8 +70,17 @@ export default function WriteConfirmationCard({ messageId, operation, state, sta
       </dl>
       {state === "pending" || processing ? <p className={styles.confirmationWarning}>La operación no se ejecutará hasta que la confirmes.</p> : null}
       {state === "cancelled" ? <p className={styles.confirmationResult}>Operación cancelada.</p> : null}
-      {state === "confirmed" ? <p className={styles.confirmationResult}>Operación confirmada.</p> : null}
+      {state === "confirmed" ? <p className={styles.confirmationResult}>Operación ejecutada.</p> : null}
       {stateMessage ? <p className={styles.confirmationError} role="alert">{stateMessage}</p> : null}
+      {operation.preview?.kind === "transaction_batch" ? (
+        <div className={styles.confirmationTableWrap} tabIndex={0} aria-label="Vista previa completa del lote">
+          <table className={styles.confirmationTable}>
+            <caption>{operation.preview.transactionType === "INCOME" ? "Ingresos" : "Gastos"} que se registrarán en una sola operación</caption>
+            <thead><tr><th scope="col">N.º</th><th scope="col">Monto</th><th scope="col">Fecha</th><th scope="col">Cuenta</th><th scope="col">Categoría</th><th scope="col">Descripción</th></tr></thead>
+            <tbody>{operation.preview.items.map((item, index) => <tr key={`${item.date}-${item.amount}-${index}`}><td>{index + 1}</td><td>{operation.preview!.currency} {item.amount}</td><td><time dateTime={item.date}>{item.date}</time></td><td>{item.accountName}</td><td>{item.categoryName}</td><td>{item.description ?? "Sin descripción"}</td></tr>)}</tbody>
+          </table>
+        </div>
+      ) : null}
       <details className={styles.confirmationDetails}>
         <summary>Ver argumentos exactos</summary>
         <pre><code>{JSON.stringify(operation.arguments, null, 2)}</code></pre>

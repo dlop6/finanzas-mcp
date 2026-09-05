@@ -41,6 +41,23 @@ export class TransactionRepository {
     }
   }
 
+  /** Creates a homogeneous batch as one database unit so a rejected row never leaves partial financial data. */
+  async createBatch(inputs: readonly CreateTransactionInput[]): Promise<Transaction[]> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const business = await getActiveBusiness(tx);
+        const created: Transaction[] = [];
+        for (const input of inputs) {
+          await Promise.all([this.requireAccount(business.id, input.accountId, tx), this.requireCategory(business.id, input.categoryId, tx)]);
+          created.push(await tx.transaction.create({ data: { businessId: business.id, ...input } }));
+        }
+        return created;
+      });
+    } catch (error) {
+      throw normalizePersistenceError(error, "Transaction");
+    }
+  }
+
   async get(id: number): Promise<Transaction> {
     try {
       const business = await getActiveBusiness(this.prisma);
@@ -99,13 +116,13 @@ export class TransactionRepository {
     return transaction;
   }
 
-  private async requireAccount(businessId: number, id: number): Promise<void> {
-    const account = await this.prisma.account.findFirst({ where: { id, businessId } });
+  private async requireAccount(businessId: number, id: number, prisma: Pick<PrismaClient, "account"> = this.prisma): Promise<void> {
+    const account = await prisma.account.findFirst({ where: { id, businessId } });
     if (!account) throw new EntityNotFoundError("Account", id);
   }
 
-  private async requireCategory(businessId: number, id: number): Promise<void> {
-    const category = await this.prisma.category.findFirst({ where: { id, businessId } });
+  private async requireCategory(businessId: number, id: number, prisma: Pick<PrismaClient, "category"> = this.prisma): Promise<void> {
+    const category = await prisma.category.findFirst({ where: { id, businessId } });
     if (!category) throw new EntityNotFoundError("Category", id);
   }
 }

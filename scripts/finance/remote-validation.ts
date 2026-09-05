@@ -264,7 +264,7 @@ export async function runRemoteFinanceValidation(dependencies: RemoteFinanceVali
   try {
     const expected = expectedFinanceTools();
     const discovered = (await client.toolsList()).tools;
-    if (expected.length !== 25) throw new RemoteFinanceValidationError("CONTRACT_MISMATCH");
+    if (expected.length !== 26) throw new RemoteFinanceValidationError("CONTRACT_MISMATCH");
     compareFinanceToolContracts(expected, discovered);
     output("contract: passed");
 

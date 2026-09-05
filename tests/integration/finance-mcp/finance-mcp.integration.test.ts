@@ -27,7 +27,7 @@ describe("Finance MCP against isolated PostgreSQL", () => {
   it("discovers the complete productive catalog", async () => {
     const { tools } = await harness.listTools();
     expect(tools.map((tool) => tool.name)).toEqual([
-      "record_income", "record_expense", "list_transactions", "update_transaction", "delete_transaction",
+      "record_income", "record_expense", "record_transactions_batch", "list_transactions", "update_transaction", "delete_transaction",
       "record_debt", "list_debts", "update_debt", "mark_debt_paid", "delete_debt",
       "record_receivable", "list_receivables", "update_receivable", "mark_receivable_collected", "delete_receivable",
       "create_product", "list_products", "update_product", "record_inventory_movement", "list_low_stock_products",
@@ -72,6 +72,32 @@ describe("Finance MCP against isolated PostgreSQL", () => {
     await harness.callTool("delete_transaction", { transactionId });
     expect(await prisma.transaction.findUnique({ where: { id: transactionId } })).toBeNull();
     expect(data<{ currentBalance: string }>(await harness.callTool("get_current_balance", {})).currentBalance).toBe("19475.00");
+  });
+
+  it("records a homogeneous batch atomically and rolls it back when one row is invalid", async () => {
+    const before = await prisma.transaction.count();
+    const created = await harness.callTool("record_transactions_batch", {
+      type: "EXPENSE",
+      transactions: [
+        { accountId: 1, categoryId: 4, amount: "10.00", date: "2026-08-10", description: "First" },
+        { accountId: 2, categoryId: 4, amount: "20.00", date: "2026-08-11", description: "Second" },
+      ],
+    });
+    expect(created.isError).not.toBe(true);
+    expect(data<{ currency: string; type: string; transactions: Array<{ amount: string; date: string; description: string | null }> }>(created)).toMatchObject({
+      currency: "GTQ", type: "EXPENSE", transactions: [{ amount: "10.00", date: "2026-08-10", description: "First" }, { amount: "20.00", date: "2026-08-11", description: "Second" }],
+    });
+    expect(await prisma.transaction.count()).toBe(before + 2);
+
+    const rejected = await harness.callTool("record_transactions_batch", {
+      type: "EXPENSE",
+      transactions: [
+        { accountId: 1, categoryId: 4, amount: "30.00", date: "2026-08-12" },
+        { accountId: 999, categoryId: 4, amount: "40.00", date: "2026-08-13" },
+      ],
+    });
+    expect(rejected.isError).toBe(true);
+    expect(await prisma.transaction.count()).toBe(before + 2);
   });
 
   it("supports debt and receivable lifecycles without creating transactions", async () => {

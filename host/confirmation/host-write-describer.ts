@@ -2,7 +2,7 @@ import type { PendingWriteOperation } from "@/host/orchestration/chat-orchestrat
 import { ConfirmationError } from "./confirmation-error";
 import { FilesystemWriteOperationDescriber } from "./filesystem-write-describer";
 import { GitWriteOperationDescriber } from "./git-write-describer";
-import { FinanceWriteOperationDescriber, type WriteOperationDescriber } from "./finance-write-describer";
+import { FinanceWriteOperationDescriber, type WriteOperationDescriber, type WriteOperationPresentation } from "./finance-write-describer";
 import type { TransactionReferenceResolver } from "./transaction-reference-resolver";
 
 export class HostWriteOperationDescriber implements WriteOperationDescriber {
@@ -14,7 +14,7 @@ export class HostWriteOperationDescriber implements WriteOperationDescriber {
     this.finance = new FinanceWriteOperationDescriber(transactionReferences);
   }
 
-  describe(operation: PendingWriteOperation, context?: { sessionId: string }): string | Promise<string> {
+  describe(operation: PendingWriteOperation, context?: { sessionId: string }): string | WriteOperationPresentation | Promise<string | WriteOperationPresentation> {
     if (operation.serverId === "finance-mcp") return this.finance.describe(operation, context);
     if (operation.serverId === "filesystem-mcp") return this.filesystem.describe(operation);
     if (operation.serverId === "git-mcp") return this.git.describe(operation);

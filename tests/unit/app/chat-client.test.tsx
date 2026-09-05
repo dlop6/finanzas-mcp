@@ -98,7 +98,7 @@ describe("ChatClient", () => {
     expect((input as HTMLTextAreaElement).value).toBe("dos");
   });
 
-  it("removes an unconfirmed user message and preserves its draft after a recoverable send failure", async () => {
+  it("keeps a failed user message visible and preserves its draft after a recoverable send failure", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ error: { code: "CHAT_FAILED", message: "No fue posible completar la respuesta del chat." } }, 502)));
     render(<ChatClient />);
     const input = screen.getByLabelText("Mensaje");
@@ -107,7 +107,8 @@ describe("ChatClient", () => {
     fireEvent.submit(input.closest("form")!);
 
     await screen.findByRole("alert");
-    expect(screen.queryByText("Mantener este mensaje", { selector: ".messageUser p" })).toBeNull();
+    expect(screen.getAllByText("Mantener este mensaje")).toHaveLength(2);
+    expect(screen.getByText("No procesado.")).toBeTruthy();
     expect((input as HTMLTextAreaElement).value).toBe("Mantener este mensaje");
     await waitFor(() => expect(document.activeElement).toBe(input));
   });
@@ -163,8 +164,40 @@ describe("ChatClient", () => {
     expect(fetchMock).toHaveBeenLastCalledWith("/api/chat", expect.objectContaining({
       body: JSON.stringify({ sessionId: "session-1", confirmationDecision: "confirm" }),
     }));
-    expect(screen.getByText("CONFIRMADA")).toBeTruthy();
+    expect(screen.getByText("EJECUTADA")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Confirmar operación" })).toBeNull();
+  });
+
+  it("renders a complete batch preview with verified names and keeps IDs out of the preview", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      status: "confirmation_required",
+      sessionId: "session-1",
+      message: "Revisa el lote.",
+      pendingOperation: {
+        serverId: "finance-mcp",
+        toolName: "record_transactions_batch",
+        arguments: { type: "EXPENSE", transactions: [{ accountId: 1, categoryId: 2, amount: "100.00", date: "2026-08-10" }] },
+        description: "Registrar 2 gastos en una sola operación.",
+        preview: {
+          kind: "transaction_batch",
+          transactionType: "EXPENSE",
+          currency: "GTQ",
+          items: [
+            { accountName: "Banco", categoryName: "Inventario", amount: "100.00", date: "2026-08-10", description: "Compra" },
+            { accountName: "Efectivo", categoryName: "Servicios", amount: "200.00", date: "2026-08-11" },
+          ],
+        },
+      },
+    })));
+    render(<ChatClient />);
+    fireEvent.change(screen.getByLabelText("Mensaje"), { target: { value: "Registra gastos" } });
+    fireEvent.submit(screen.getByLabelText("Mensaje").closest("form")!);
+
+    await screen.findByText("Gastos que se registrarán en una sola operación");
+    expect(screen.getByText("Banco")).toBeTruthy();
+    expect(screen.getByText("Inventario")).toBeTruthy();
+    expect(screen.getByText("GTQ 100.00")).toBeTruthy();
+    expect(screen.getByRole("table").textContent).not.toContain("accountId");
   });
 
   it("cancels a pending operation without creating a user message", async () => {

@@ -18,18 +18,29 @@ import { GIT_MCP_SERVER_ID, registerGitMcpTools } from "@/host/orchestration/git
 import { HostMcpToolRegistry } from "@/host/orchestration/mcp-tool-registry";
 import { createWebFinancialDashboardService, type WebFinancialDashboardService } from "./financial-dashboard";
 
-export const WEB_HOST_SYSTEM_PROMPT = [
+function guatemalaDate(now: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value;
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+export function createWebHostSystemPrompt(now: Date = new Date()): string {
+  return [
   "Eres un asistente de gestión financiera para una pequeña empresa.",
   "Responde siempre en español.",
   "Usa Markdown solo cuando mejore la claridad: párrafos breves, listas o tablas si aportan valor.",
   "No emitas HTML, imágenes remotas ni envuelvas toda la respuesta en un bloque de código.",
   "Responde preguntas generales directamente y usa las herramientas registradas solo cuando necesites datos o una acción externa.",
   "Finance MCP es la autoridad para cálculos y datos financieros: no inventes saldos, movimientos ni resultados.",
-  "Antes de preparar record_income o record_expense, consulta get_transaction_reference_data para usar cuentas y categorías reales por nombre.",
+  "Antes de preparar record_income, record_expense o record_transactions_batch, consulta get_transaction_reference_data para usar cuentas y categorías reales por nombre.",
   "Nunca pidas accountId ni categoryId. Pregunta por nombres cuando falten o sean ambiguos. Si se pide cualquier categoría, propone Otros ingresos u Otros gastos solo si aparece en las referencias compatibles.",
-  "Aclara montos o monedas ambiguos y no conviertas monedas. El sistema usa GTQ.",
+  `La fecha actual en America/Guatemala es ${guatemalaDate(now)}. Si el usuario omite el año, propón este año y muestra la fecha completa antes de confirmar.`,
+  "Aclara montos o monedas ambiguos y no conviertas monedas. El sistema usa GTQ. Para varios movimientos homogéneos usa record_transactions_batch; asigna montos y fechas por orden solo si las cantidades coinciden y pide aclaración si no coinciden.",
   "No afirmes que una escritura se realizó antes de la confirmación explícita del Host.",
-].join(" ");
+  ].join(" ");
+}
+
+export const WEB_HOST_SYSTEM_PROMPT = createWebHostSystemPrompt();
 
 export type WebFinanceRuntime = {
   registry: HostMcpToolRegistry;
@@ -67,7 +78,7 @@ export async function createWebFinanceRuntime(options: CreateWebFinanceRuntimeOp
     const registry = new HostMcpToolRegistry();
     await registerFinanceMcpTools(registry, financeClient);
     const tools = registry.list();
-    if (tools.length !== 25 || tools.filter((tool) => tool.isWriteOperation).length !== 15) {
+    if (tools.length !== 26 || tools.filter((tool) => tool.isWriteOperation).length !== 16) {
       throw new WebHostRuntimeError("INVALID_CATALOG", "The Finance MCP catalog is incomplete.", "finance");
     }
     const startedFinanceClient = financeClient;
@@ -121,7 +132,7 @@ async function extendWebFinanceRuntime(financeRuntime: WebFinanceRuntime, option
     await registerFilesystemMcpTools(financeRuntime.registry, filesystemClient);
     await registerGitMcpTools(financeRuntime.registry, gitClient);
     const tools = financeRuntime.registry.list();
-    if (tools.length !== 51 || tools.filter((tool) => tool.isWriteOperation).length !== 24) {
+    if (tools.length !== 52 || tools.filter((tool) => tool.isWriteOperation).length !== 25) {
       throw new WebHostRuntimeError("INVALID_CATALOG", "The Host MCP catalog is incomplete.", "discovery");
     }
     const chatOrchestrator = createChatOrchestrator({ deepSeekClient, toolRegistry: financeRuntime.registry });

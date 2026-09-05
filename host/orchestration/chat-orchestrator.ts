@@ -44,6 +44,7 @@ export type OrchestratedChatResult =
       status: "completed";
       response: DeepSeekChatResult;
       turnMessages: DeepSeekChatMessage[];
+      writeOutcome?: "succeeded" | "rejected" | "unknown";
     }
   | {
       status: "confirmation_required";
@@ -83,6 +84,34 @@ type PreparedToolCall = {
   tool: RegisteredMcpTool;
   arguments: Record<string, unknown>;
 };
+
+const BATCH_TOOL_NAME = "record_transactions_batch";
+
+/** Converts equivalent model-issued transaction calls into one stored, confirmable batch without executing any write. */
+function normalizeTransactionWriteBatch(toolRegistry: HostMcpToolRegistry, prepared: readonly PreparedToolCall[]): PreparedToolCall | null {
+  if (prepared.length < 2 || prepared.length > 25) return null;
+  const firstName = prepared[0]?.tool.definition.name;
+  if ((firstName !== "record_income" && firstName !== "record_expense") || prepared.some((call) => call.tool.definition.name !== firstName || call.tool.serverId !== "finance-mcp")) {
+    return null;
+  }
+  let tool: RegisteredMcpTool;
+  try {
+    tool = toolRegistry.resolve(BATCH_TOOL_NAME);
+  } catch {
+    return null;
+  }
+  if (!tool.isWriteOperation || tool.serverId !== "finance-mcp") return null;
+  const arguments_ = {
+    type: firstName === "record_income" ? "INCOME" : "EXPENSE",
+    transactions: prepared.map((call) => structuredClone(call.arguments)),
+  };
+  const call: DeepSeekToolCall = {
+    id: `batch-${prepared[0].call.id}`,
+    type: "function",
+    function: { name: BATCH_TOOL_NAME, arguments: JSON.stringify(arguments_) },
+  };
+  return { call, tool, arguments: arguments_ };
+}
 
 function requireText(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -165,6 +194,10 @@ function serializeToolResult(result: McpCallToolResult): string {
   return JSON.stringify(result);
 }
 
+function fallbackResponse(content: string): DeepSeekChatResult {
+  return { content, toolCalls: [], model: "host", finishReason: "stop" };
+}
+
 function sameJsonValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -238,11 +271,19 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
         const prepared = prepareToolCalls(options.toolRegistry, response.toolCalls);
         const writes = prepared.filter((call) => call.tool.isWriteOperation);
         if (writes.length > 0) {
-          if (prepared.length !== 1 || writes.length !== 1) {
+          const normalized = writes.length === prepared.length ? normalizeTransactionWriteBatch(options.toolRegistry, prepared) : null;
+          if (prepared.length !== 1 && !normalized) {
             throw new ChatOrchestrationError("UNSUPPORTED_WRITE_BATCH", "Write tool calls must be requested one at a time.");
           }
 
-          const write = writes[0];
+          const write = normalized ?? writes[0];
+          if (normalized) {
+            turnMessages[turnMessages.length - 1] = {
+              role: "assistant",
+              content: response.content,
+              toolCalls: [structuredClone(normalized.call)],
+            };
+          }
           return {
             status: "confirmation_required",
             pendingOperation: {
@@ -287,7 +328,13 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
       try {
         toolResult = await tool.client.toolsCall(input.pendingOperation.toolName, structuredClone(input.pendingOperation.arguments), { sessionId });
       } catch {
-        toolResult = safeMcpFailure();
+        const response = fallbackResponse("No fue posible confirmar si la operación se ejecutó. Verifica los movimientos antes de volver a intentarlo.");
+        return {
+          status: "completed",
+          response,
+          writeOutcome: "unknown",
+          turnMessages: structuredClone([...pendingTurnMessages, { role: "assistant", content: response.content }]),
+        };
       }
 
       const toolMessage: DeepSeekChatMessage = {
@@ -295,6 +342,17 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
         toolCallId: input.pendingOperation.toolCallId,
         content: serializeToolResult(toolResult),
       };
+      if (toolResult.isError) {
+        const response = fallbackResponse(input.pendingOperation.toolName === BATCH_TOOL_NAME
+          ? "No se registró ningún movimiento del lote."
+          : "La operación fue rechazada por Finance MCP. No se completó el cambio solicitado.");
+        return {
+          status: "completed",
+          response,
+          writeOutcome: "rejected",
+          turnMessages: structuredClone([...pendingTurnMessages, toolMessage, { role: "assistant", content: response.content }]),
+        };
+      }
       let finalResponse: DeepSeekChatResult;
       try {
         finalResponse = await options.deepSeekClient.sendChat([
@@ -305,12 +363,13 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
           toolMessage,
         ]);
       } catch {
-        throw new ChatOrchestrationError("CONFIRMED_WRITE_RESPONSE_FAILED", "The confirmed write was processed but no final response was generated.");
+        finalResponse = fallbackResponse(input.pendingOperation.toolName === BATCH_TOOL_NAME ? "Se registraron correctamente los movimientos del lote." : "La operación se ejecutó correctamente.");
       }
       ensureFinalContent(finalResponse);
       return {
         status: "completed",
         response: finalResponse,
+        writeOutcome: "succeeded",
         turnMessages: structuredClone([...pendingTurnMessages, toolMessage, assistantMessage(finalResponse)]),
       };
     },

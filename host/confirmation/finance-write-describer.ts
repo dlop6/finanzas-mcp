@@ -3,12 +3,22 @@ import { ConfirmationError } from "./confirmation-error";
 import type { TransactionReferenceResolver } from "./transaction-reference-resolver";
 
 export type WriteOperationDescriber = {
-  describe(operation: PendingWriteOperation, context?: { sessionId: string }): string | Promise<string>;
+  describe(operation: PendingWriteOperation, context?: { sessionId: string }): string | WriteOperationPresentation | Promise<string | WriteOperationPresentation>;
 };
+
+export type TransactionBatchPreview = {
+  kind: "transaction_batch";
+  transactionType: "INCOME" | "EXPENSE";
+  currency: "GTQ";
+  items: Array<{ accountName: string; categoryName: string; amount: string; date: string; description?: string }>;
+};
+
+export type WriteOperationPresentation = { description: string; preview?: TransactionBatchPreview };
 
 export const financeWriteToolNames = [
   "record_income",
   "record_expense",
+  "record_transactions_batch",
   "update_transaction",
   "delete_transaction",
   "record_debt",
@@ -54,6 +64,16 @@ function optionalText(args: Record<string, unknown>, key: string, label: string)
   return Object.hasOwn(args, key) ? `${label} ${quoted(args, key)}` : null;
 }
 
+function batchTransactions(args: Record<string, unknown>): Array<{ accountId: number; categoryId: number; amount: string; date: string; description?: string }> {
+  const values = args.transactions;
+  if (!Array.isArray(values) || values.length < 2 || values.length > 25) return fail();
+  return values.map((value) => {
+    const item = object(value as Record<string, unknown>);
+    const result = { accountId: integer(item, "accountId"), categoryId: integer(item, "categoryId"), amount: text(item, "amount"), date: text(item, "date") };
+    return Object.hasOwn(item, "description") ? { ...result, description: text(item, "description") } : result;
+  });
+}
+
 function updateFields(args: Record<string, unknown>, fields: readonly [string, string, "text" | "money" | "integer"][]): string {
   const changes = fields.flatMap(([key, label, type]) => {
     if (!Object.hasOwn(args, key)) return [];
@@ -66,7 +86,7 @@ function updateFields(args: Record<string, unknown>, fields: readonly [string, s
 export class FinanceWriteOperationDescriber implements WriteOperationDescriber {
   constructor(private readonly transactionReferences?: TransactionReferenceResolver) {}
 
-  describe(operation: PendingWriteOperation, context?: { sessionId: string }): string | Promise<string> {
+  describe(operation: PendingWriteOperation, context?: { sessionId: string }): string | WriteOperationPresentation | Promise<string | WriteOperationPresentation> {
     const args = object(operation.arguments);
 
     switch (operation.toolName) {
@@ -81,6 +101,28 @@ export class FinanceWriteOperationDescriber implements WriteOperationDescriber {
           return this.transactionReferences.resolve(context.sessionId, kind, accountId, categoryId).then(format);
         }
         return format({ accountName: String(accountId), categoryName: String(categoryId) });
+      }
+      case "record_transactions_batch": {
+        const type = text(args, "type");
+        if (type !== "INCOME" && type !== "EXPENSE") return fail();
+        const transactions = batchTransactions(args);
+        const description = `Registrar ${transactions.length} ${type === "INCOME" ? "ingresos" : "gastos"} en una sola operación. No se guardará ninguno si una fila falla.`;
+        if (!this.transactionReferences || !context) return { description };
+        return this.transactionReferences.resolveBatch(context.sessionId, type, transactions).then((references) => ({
+          description,
+          preview: {
+            kind: "transaction_batch" as const,
+            transactionType: type,
+            currency: "GTQ" as const,
+            items: transactions.map((transaction, index) => ({
+              accountName: references[index]!.accountName,
+              categoryName: references[index]!.categoryName,
+              amount: transaction.amount,
+              date: transaction.date,
+              ...(transaction.description === undefined ? {} : { description: transaction.description }),
+            })),
+          },
+        }));
       }
       case "update_transaction":
         return `Actualizar la transacción ${integer(args, "transactionId")}: ${updateFields(args, [["accountId", "cuenta", "integer"], ["categoryId", "categoría", "integer"], ["amount", "monto", "money"], ["date", "fecha", "text"], ["description", "descripción", "text"]])}.`;

@@ -3,7 +3,9 @@ import {
   type PendingWriteConfirmationSnapshot,
   type SessionChatService,
 } from "@/host/context";
-import { WEB_HOST_SYSTEM_PROMPT } from "./web-host-runtime";
+import { ChatOrchestrationError } from "@/host/orchestration/chat-orchestrator";
+import { createWebHostSystemPrompt } from "./web-host-runtime";
+import type { TransactionBatchPreview } from "@/host/confirmation/finance-write-describer";
 
 export const WEB_CHAT_MESSAGE_MAX_LENGTH = 4_000;
 
@@ -19,6 +21,7 @@ export type WebChatRequest =
 
 export type WebChatResponse =
   | { status: "completed"; sessionId: string; message: string }
+  | { status: "confirmation_resolved"; sessionId: string; outcome: "succeeded" | "rejected" | "unknown"; message: string }
   | {
       status: "confirmation_required";
       sessionId: string;
@@ -26,8 +29,9 @@ export type WebChatResponse =
       pendingOperation: {
         serverId: string;
         toolName: string;
-        arguments: Record<string, unknown>;
-        description: string;
+      arguments: Record<string, unknown>;
+      description: string;
+      preview?: TransactionBatchPreview;
       };
     }
   | { status: "cancelled"; sessionId: string; message: string };
@@ -37,6 +41,9 @@ export type WebChatErrorCode =
   | "SESSION_NOT_FOUND"
   | "SESSION_BUSY"
   | "CONFIRMATION_NOT_FOUND"
+  | "WRITE_BATCH_PREPARATION_FAILED"
+  | "WRITE_BATCH_LIMIT_EXCEEDED"
+  | "WRITE_REFERENCE_FAILED"
   | "HOST_UNAVAILABLE"
   | "CHAT_FAILED";
 
@@ -57,6 +64,9 @@ function errorResponse(code: WebChatErrorCode, status: number, sessionId?: strin
     SESSION_NOT_FOUND: "La sesión ya no está disponible. Envía un nuevo mensaje para iniciar otra.",
     SESSION_BUSY: "La sesión todavía está procesando un mensaje.",
     CONFIRMATION_NOT_FOUND: "La operación ya no está pendiente. Verifica el estado antes de continuar.",
+    WRITE_BATCH_PREPARATION_FAILED: "No se pudo preparar el conjunto de movimientos. No se realizó ninguna operación.",
+    WRITE_BATCH_LIMIT_EXCEEDED: "El lote supera el máximo de 25 movimientos.",
+    WRITE_REFERENCE_FAILED: "Una cuenta o categoría ya no está disponible.",
     HOST_UNAVAILABLE: "El servicio de chat no está disponible en este momento.",
     CHAT_FAILED: "No fue posible completar la respuesta del chat.",
   };
@@ -117,12 +127,14 @@ function pendingOperation(snapshot: PendingWriteConfirmationSnapshot): Extract<W
     toolName: snapshot.toolName,
     arguments: structuredClone(snapshot.arguments),
     description: snapshot.description,
+    ...(snapshot.preview ? { preview: structuredClone(snapshot.preview) } : {}),
   };
 }
 
 function toResponse(result: Awaited<ReturnType<SessionChatService["sendMessage"]>>, sessionId: string): WebChatResponse {
   if (result.status === "completed") {
     if (!result.response.content?.trim()) throw new Error("Missing completed response content.");
+    if (result.writeOutcome) return { status: "confirmation_resolved", sessionId, outcome: result.writeOutcome, message: result.response.content };
     return { status: "completed", sessionId, message: result.response.content };
   }
   if (result.status === "confirmation_required") {
@@ -164,7 +176,7 @@ export function createWebChatHandler(getRuntime: WebChatRuntimeProvider): (reque
         return Response.json(toResponse(result, decisionSessionId), { headers: { "Cache-Control": "no-store" } });
       }
       if (!sessionId) {
-        sessionId = runtime.sessionChat.createSession({ systemPrompt: WEB_HOST_SYSTEM_PROMPT }).sessionId;
+        sessionId = runtime.sessionChat.createSession({ systemPrompt: createWebHostSystemPrompt() }).sessionId;
       }
       const result = await runtime.sessionChat.sendMessage(sessionId, input.message);
       return Response.json(toResponse(result, sessionId), { headers: { "Cache-Control": "no-store" } });
@@ -174,6 +186,10 @@ export function createWebChatHandler(getRuntime: WebChatRuntimeProvider): (reque
         if (error.code === "SESSION_BUSY") return errorResponse("SESSION_BUSY", 409, sessionId);
         if (error.code === "PENDING_OPERATION_NOT_FOUND") return errorResponse("CONFIRMATION_NOT_FOUND", 409, sessionId);
         if (error.code === "INVALID_USER_MESSAGE") return errorResponse("INVALID_REQUEST", 400, sessionId);
+      }
+      if (error instanceof ChatOrchestrationError) {
+        if (error.code === "UNSUPPORTED_WRITE_BATCH") return errorResponse("WRITE_BATCH_PREPARATION_FAILED", 422, sessionId);
+        if (error.code === "INVALID_TOOL_ARGUMENTS") return errorResponse("WRITE_BATCH_PREPARATION_FAILED", 422, sessionId);
       }
       return errorResponse("CHAT_FAILED", 502, sessionId);
     }

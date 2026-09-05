@@ -135,6 +135,7 @@
 .confirmationConfirming,
 .confirmationCancelling { background: var(--nb-yellow); }
 .confirmationConfirmed { background: var(--nb-teal); color: var(--nb-on-teal); }
+.confirmationRejected, .confirmationUnknown { background: var(--nb-danger-surface); }
 .confirmationCancelled { background: var(--nb-paper); }
 .confirmationError { background: var(--nb-danger-surface); }
 
@@ -216,6 +217,14 @@
 }
 
 .confirmationActions { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 0.9rem; }
+
+.confirmationTableWrap { overflow-x: auto; margin: 1rem 0; border: var(--nb-border); background: var(--nb-paper); }
+.confirmationTable { width: 100%; min-width: 720px; border-collapse: collapse; color: var(--nb-ink); font-size: 0.875rem; }
+.confirmationTable caption { caption-side: top; text-align: left; padding: 0.65rem; font-weight: 800; }
+.confirmationTable th, .confirmationTable td { padding: 0.55rem; border-top: 1px solid var(--nb-ink); text-align: left; vertical-align: top; }
+.confirmationTable th { background: var(--nb-yellow); }
+.failedMessageNote { margin: 0.7rem 0 0; border-top: 1px solid currentColor; padding-top: 0.45rem; font-size: 0.82rem; font-weight: 700; }
+.failedMessageNote button { min-height: 2rem; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
 
 .confirmButton,
 .cancelButton {
