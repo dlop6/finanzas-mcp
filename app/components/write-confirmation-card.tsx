@@ -43,6 +43,8 @@ const serverLabels: Record<string, string> = {
 };
 
 function stateLabel(state: ConfirmationState): string {
+  if (state === "confirming") return "CONFIRMANDO OPERACIÓN";
+  if (state === "cancelling") return "CANCELANDO OPERACIÓN";
   if (state === "confirmed") return "EJECUTADA";
   if (state === "rejected") return "RECHAZADA";
   if (state === "unknown") return "RESULTADO INCIERTO";
@@ -80,7 +82,7 @@ export default function WriteConfirmationCard({ messageId, operation, state, sta
         <div><dt>Servidor</dt><dd>{serverLabels[operation.serverId] ?? operation.serverId}</dd></div>
         <div><dt>Herramienta</dt><dd><code>{operation.toolName}</code></dd></div>
       </dl>
-      {state === "pending" || processing ? <p className={styles.confirmationWarning}>La operación no se ejecutará hasta que la confirmes.</p> : null}
+      {state === "pending" ? <p className={styles.confirmationWarning}>La operación no se ejecutará hasta que la confirmes.</p> : null}
       {state === "cancelled" ? <p className={styles.confirmationResult}>Operación cancelada.</p> : null}
       {state === "confirmed" ? <p className={styles.confirmationResult}>Operación ejecutada.</p> : null}
       {stateMessage ? <p className={styles.confirmationError} role="alert">{stateMessage}</p> : null}
@@ -102,7 +104,12 @@ export default function WriteConfirmationCard({ messageId, operation, state, sta
           <button type="button" className={styles.confirmButton} onClick={() => onDecision("confirm")}>Confirmar operación</button>
           <button type="button" className={styles.cancelButton} onClick={() => onDecision("cancel")}>Cancelar</button>
         </div>
-      ) : processing ? <p className={styles.confirmationProcessing} aria-live="polite">{state === "confirming" ? "Confirmando…" : "Cancelando…"}</p> : null}
+      ) : processing ? <div className={styles.confirmationProcessing} role="status" aria-live="polite" aria-atomic="true">
+        <p>{state === "confirming"
+          ? "Se está enviando una única operación al sistema financiero. Mantén esta pantalla abierta mientras se confirma el resultado."
+          : "Se está descartando la operación pendiente. No se ejecutará ninguna escritura."}</p>
+        <div className={styles.confirmationProcessingSkeleton} aria-hidden="true"><span /><span /><span /></div>
+      </div> : null}
     </section>
   );
 }

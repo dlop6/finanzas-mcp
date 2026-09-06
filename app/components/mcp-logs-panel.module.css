@@ -26,16 +26,16 @@
 .errorRows .eventRow > td { background: var(--nb-danger-surface); }
 .timeCell { color: var(--nb-muted); font-size: .76rem; font-weight: 750; }
 .eventCell, .resultCell { min-width: 0; }
-.eventCell { display: grid; gap: .22rem; }
-.eventCell strong { font-size: .88rem; }
-.eventCell span { color: var(--nb-muted); font-size: .76rem; font-weight: 650; overflow-wrap: anywhere; }
-.eventCell code, .resultCell code, .payload code { font-family: var(--font-geist-mono), monospace; overflow-wrap: anywhere; }
-.eventCell > code { margin-top: .1rem; font-size: .73rem; }
-.resultCell { font-size: .76rem; }
-.resultCell > * { display: block; }
+.eventContent, .resultContent { display: grid; min-width: 0; gap: .22rem; }
+.eventContent strong { font-size: .88rem; }
+.eventContent span { color: var(--nb-muted); font-size: .76rem; font-weight: 650; overflow-wrap: anywhere; }
+.eventContent code, .resultContent code, .payload code { font-family: var(--font-geist-mono), monospace; overflow-wrap: anywhere; }
+.eventContent > code { margin-top: .1rem; font-size: .73rem; }
+.resultContent { font-size: .76rem; }
+.resultContent > * { display: block; }
 .statusLabel { font-weight: 900; }
 .statusCode { margin-top: .18rem; color: var(--nb-muted); font-size: .68rem; }
-.resultCell > span:not(.statusLabel) { margin-top: .22rem; color: var(--nb-muted); font-weight: 700; }
+.resultContent > span:not(.statusLabel) { margin-top: .22rem; color: var(--nb-muted); font-weight: 700; }
 .payloadButton { min-height: 2.75rem; margin-top: .55rem; border: 1px solid var(--nb-ink); border-radius: var(--nb-radius-control); background: var(--nb-paper); color: var(--nb-ink); cursor: pointer; padding: .35rem .55rem; font: inherit; font-size: .75rem; font-weight: 850; }
 .payloadButton:hover { background: var(--nb-surface); }
 .payloadButton:focus-visible { outline: 3px solid var(--nb-focus); outline-offset: 2px; }

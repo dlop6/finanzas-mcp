@@ -168,6 +168,33 @@ describe("ChatClient", () => {
     expect(screen.queryByRole("button", { name: "Confirmar operación" })).toBeNull();
   });
 
+  it("keeps the confirmation visible with an honest processing state while the decision is pending", async () => {
+    let resolveDecision: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        status: "confirmation_required",
+        sessionId: "session-1",
+        message: "¿Confirmas esta operación?",
+        pendingOperation: { serverId: "finance-mcp", toolName: "record_income", arguments: { amount: "1.00" }, description: "Registrar un ingreso." },
+      }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveDecision = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ChatClient />);
+
+    fireEvent.change(screen.getByLabelText("Mensaje"), { target: { value: "Registra un ingreso" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+    await screen.findByRole("button", { name: "Confirmar operación" });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar operación" }));
+
+    expect(screen.getByText("CONFIRMANDO OPERACIÓN")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("Se está enviando una única operación al sistema financiero.");
+    expect(screen.queryByText("La operación no se ejecutará hasta que la confirmes.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Confirmar operación" })).toBeNull();
+
+    resolveDecision?.(jsonResponse({ status: "completed", sessionId: "session-1", message: "Operación completada." }));
+    await screen.findByText("EJECUTADA");
+  });
+
   it("renders a complete batch preview with verified names and keeps IDs out of the preview", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
       status: "confirmation_required",

@@ -131,16 +131,20 @@ function LogTable({ label, context, entries, expandedPayloads, onToggle }: { lab
           <tr className={styles.eventRow}>
             <td className={styles.timeCell}><time dateTime={entry.timestamp} title={formatTimestamp(entry.timestamp)}><span aria-hidden="true">{formatTime(entry.timestamp)}</span><span className="sr-only">{formatTimestamp(entry.timestamp)}</span></time></td>
             <td className={styles.eventCell}>
-              <strong>{serverLabel(entry.serverId)}</strong>
-              <span>{messageTypeLabel(entry.messageType)}{entry.method !== undefined ? <> · <code>{entry.method}</code></> : null}</span>
-              <span><span>{directionLabel(entry.direction)}</span><span aria-hidden="true"> · </span><span>{transportLabel(entry.transport)}</span></span>
-              {entry.requestId !== undefined ? <code>Request ID: {String(entry.requestId)}</code> : null}
+              <div className={styles.eventContent}>
+                <strong>{serverLabel(entry.serverId)}</strong>
+                <span>{messageTypeLabel(entry.messageType)}{entry.method !== undefined ? <> · <code>{entry.method}</code></> : null}</span>
+                <span><span>{directionLabel(entry.direction)}</span><span aria-hidden="true"> · </span><span>{transportLabel(entry.transport)}</span></span>
+                {entry.requestId !== undefined ? <code>Request ID: {String(entry.requestId)}</code> : null}
+              </div>
             </td>
             <td className={styles.resultCell}>
-              <span className={styles.statusLabel}>{statusLabel(entry.status)}</span>
-              <code className={styles.statusCode}>{entry.status}</code>
-              {entry.durationMs !== undefined ? <span>{formatDuration(entry.durationMs)}</span> : null}
-              <button type="button" className={styles.payloadButton} aria-expanded={expanded} aria-controls={payloadId} onClick={() => onToggle(key)} aria-label={`${action} payload de ${method}, ${messageTypeLabel(entry.messageType)}${entry.requestId !== undefined ? `, Request ID ${String(entry.requestId)}` : ""}`}>{action} payload</button>
+              <div className={styles.resultContent}>
+                <span className={styles.statusLabel}>{statusLabel(entry.status)}</span>
+                <code className={styles.statusCode}>{entry.status}</code>
+                {entry.durationMs !== undefined ? <span>{formatDuration(entry.durationMs)}</span> : null}
+                <button type="button" className={styles.payloadButton} aria-expanded={expanded} aria-controls={payloadId} onClick={() => onToggle(key)} aria-label={`${action} payload de ${method}, ${messageTypeLabel(entry.messageType)}${entry.requestId !== undefined ? `, Request ID ${String(entry.requestId)}` : ""}`}>{action} payload</button>
+              </div>
             </td>
           </tr>
           {expanded ? <tr className={styles.payloadRow}><td colSpan={3}><div id={payloadId} className={styles.payload}><pre><code>{entry.payload}</code></pre></div></td></tr> : null}

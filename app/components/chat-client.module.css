@@ -180,8 +180,26 @@
 .confirmationDetails code { font-family: var(--font-geist-mono), monospace; }
 
 .confirmationWarning,
-.confirmationResult,
-.confirmationProcessing { margin: 0.75rem 0; font-size: 0.9rem; font-weight: 750; }
+.confirmationResult { margin: 0.75rem 0; font-size: 0.9rem; font-weight: 750; }
+
+.confirmationProcessing {
+  margin: 0.85rem 0 0;
+  border: 1px solid var(--nb-ink);
+  border-radius: var(--nb-radius-control);
+  background: var(--nb-paper);
+  color: var(--nb-ink);
+  padding: 0.7rem;
+  font-size: 0.88rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.confirmationProcessing p { margin: 0; }
+
+.confirmationProcessingSkeleton { display: grid; gap: .35rem; margin-top: .65rem; }
+.confirmationProcessingSkeleton span { display: block; height: .38rem; border: 1px solid var(--nb-ink); border-radius: var(--nb-radius-pill); background: var(--nb-teal); animation: loadingPulse 1.4s ease-in-out infinite; }
+.confirmationProcessingSkeleton span:nth-child(2) { width: 78%; animation-delay: 120ms; }
+.confirmationProcessingSkeleton span:nth-child(3) { width: 56%; animation-delay: 240ms; }
 
 .confirmationError {
   margin: 0.75rem 0;
@@ -239,7 +257,7 @@
   font-weight: 900;
 }
 
-.confirmButton { background: var(--nb-pink); }
+.confirmButton { background: var(--nb-teal); color: var(--nb-on-teal); }
 .cancelButton { background: var(--nb-paper); }
 
 .confirmButton:hover,
@@ -540,6 +558,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .loadingSkeleton span { animation: none; }
+  .loadingSkeleton span, .confirmationProcessingSkeleton span { animation: none; }
   .sendButton, .confirmButton, .cancelButton { transition: none; }
 }
