@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DeepSeekChatResult, DeepSeekClient } from "@/host/llm";
+import type { DeepSeekChatMessage, DeepSeekChatResult, DeepSeekClient } from "@/host/llm";
 import { createChatOrchestrator } from "@/host/orchestration/chat-orchestrator";
 import {
   HostMcpToolRegistry,
@@ -319,6 +319,42 @@ describe("chat orchestration", () => {
     );
     await expect(createChatOrchestrator({ deepSeekClient: deepSeek, toolRegistry: registry }).run(input)).resolves.toMatchObject({ status: "confirmation_required", pendingOperation: { toolName: "record_sale", arguments: recordArguments } });
     expect(client.toolsCall).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves a quoted sale across a textual answer and prepares it on the next turn without writing", async () => {
+    const args = { accountId: 1, categoryId: 2, totalAmount: "97.00", lines: [{ productId: 1, quantity: 3 }] };
+    const client = toolClient({ content: [], structuredContent: { recordArguments: args } });
+    const registry = await registryWith([quoteSaleTool, recordSaleTool], client, ["record_sale"], "finance-mcp");
+    const deepSeek = llm(
+      response({ toolCalls: [{ id: "quote", type: "function", function: { name: "quote_sale", arguments: "{}" } }] }),
+      response({ content: "La cotización es GTQ 97.00." }),
+      response({ toolCalls: [{ id: "sale", type: "function", function: { name: "record_sale", arguments: JSON.stringify({ lines: args.lines, totalAmount: args.totalAmount, categoryId: 2, accountId: 1 }) } }] }),
+    );
+    const orchestrator = createChatOrchestrator({ deepSeekClient: deepSeek, toolRegistry: registry });
+    const quoted = await orchestrator.run(input);
+    const pending = await orchestrator.run({ ...input, history: quoted.turnMessages, userMessage: "si confirmo" });
+    expect(pending).toMatchObject({ status: "confirmation_required", pendingOperation: { toolName: "record_sale", arguments: args } });
+    expect(client.toolsCall).toHaveBeenCalledTimes(1);
+    expect(client.toolsCall).toHaveBeenCalledWith("quote_sale", {}, { sessionId: input.sessionId });
+    if (pending.status !== "confirmation_required") throw new Error("Expected confirmation");
+    await orchestrator.completeConfirmedWrite({ ...input, history: quoted.turnMessages, pendingOperation: pending.pendingOperation, pendingTurnMessages: pending.turnMessages });
+    expect(client.toolsCall).toHaveBeenCalledTimes(2);
+    expect(client.toolsCall).toHaveBeenLastCalledWith("record_sale", args, { sessionId: input.sessionId });
+  });
+
+  it.each(["changed", "failed", "unrelated", "superseded", "consumed", "missing"])("rejects a %s quote without writing", async (scenario) => {
+    const args = { totalAmount: "97.00" };
+    const history: DeepSeekChatMessage[] = [
+      { role: "assistant", content: null, toolCalls: [{ id: "quote", type: "function", function: { name: scenario === "unrelated" ? "read_balance" : "quote_sale", arguments: "{}" } }] },
+      { role: "tool", toolCallId: "quote", content: JSON.stringify({ content: [], isError: scenario === "failed", structuredContent: { recordArguments: args } }) },
+    ];
+    if (scenario === "superseded") history.push({ role: "assistant", content: null, toolCalls: [{ id: "new-quote", type: "function", function: { name: "quote_sale", arguments: "{}" } }] });
+    if (scenario === "consumed") history.push({ role: "assistant", content: null, toolCalls: [{ id: "old-sale", type: "function", function: { name: "record_sale", arguments: JSON.stringify(args) } }] });
+    const client = toolClient();
+    const registry = await registryWith([quoteSaleTool, recordSaleTool, readTool], client, ["record_sale"], "finance-mcp");
+    const model = llm(response({ toolCalls: [{ id: "sale", type: "function", function: { name: "record_sale", arguments: JSON.stringify(scenario === "changed" ? { totalAmount: "98.00" } : args) } }] }));
+    await expect(createChatOrchestrator({ deepSeekClient: model, toolRegistry: registry }).run({ ...input, history: scenario === "missing" ? [] : history })).rejects.toMatchObject({ code: "SALE_QUOTE_REQUIRED" });
+    expect(client.toolsCall).not.toHaveBeenCalled();
   });
 
   it("rejects an unquoted sale before any write runs", async () => {

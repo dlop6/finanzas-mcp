@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type {
   DeepSeekChatMessage,
   DeepSeekChatResult,
@@ -252,15 +253,34 @@ function sameJsonValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-/** A sale is executable only from the exact Finance MCP quote returned in this turn. */
-function hasMatchingSaleQuote(messages: readonly DeepSeekChatMessage[], arguments_: Record<string, unknown>): boolean {
-  return messages.some((message) => {
-    if (message.role !== "tool") return false;
+/** Session history retains quotes across turns; only the latest correlated quote can prepare a sale. */
+function hasMatchingSaleQuote(registry: HostMcpToolRegistry, messages: readonly DeepSeekChatMessage[], arguments_: Record<string, unknown>): boolean {
+  let quoteCallId: string | undefined;
+  let recordArguments: Record<string, unknown> | undefined;
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      for (const call of message.toolCalls ?? []) {
+        let tool: RegisteredMcpTool;
+        try { tool = registry.resolve(call.function.name); } catch { continue; }
+        if (tool.isWriteOperation || call.function.name === "quote_sale") {
+          quoteCallId = undefined;
+          recordArguments = undefined;
+        }
+        if (call.function.name === "quote_sale" && tool.serverId === "finance-mcp" && !tool.isWriteOperation) {
+          quoteCallId = call.id;
+        }
+      }
+    }
+    if (message.role !== "tool" || !quoteCallId || message.toolCallId !== quoteCallId) continue;
+    quoteCallId = undefined;
     try {
-      const parsed = JSON.parse(message.content) as { structuredContent?: { recordArguments?: unknown } };
-      return sameJsonValue(parsed.structuredContent?.recordArguments, arguments_);
-    } catch { return false; }
-  });
+      const result: unknown = JSON.parse(message.content);
+      if (isRecord(result) && result.isError !== true && isRecord(result.structuredContent) && isRecord(result.structuredContent.recordArguments)) {
+        recordArguments = structuredClone(result.structuredContent.recordArguments);
+      }
+    } catch { recordArguments = undefined; }
+  }
+  return recordArguments !== undefined && isDeepStrictEqual(recordArguments, arguments_);
 }
 
 function validatePendingWrite(
@@ -338,7 +358,7 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
           }
 
           const write = normalized ?? writes[0];
-          if (write.tool.definition.name === SALE_TOOL_NAME && !hasMatchingSaleQuote(turnMessages, write.arguments)) {
+          if (write.tool.definition.name === SALE_TOOL_NAME && !hasMatchingSaleQuote(options.toolRegistry, [...history, ...turnMessages.slice(0, -1)], write.arguments)) {
             throw new ChatOrchestrationError("SALE_QUOTE_REQUIRED", "A sale must be quoted before confirmation.");
           }
           if (normalized) {

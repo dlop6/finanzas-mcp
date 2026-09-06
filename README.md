@@ -33,6 +33,7 @@ The Finance server implements JSON-RPC and MCP `2025-11-25` manually; no MCP SDK
 - Multiple homogeneous income or expense records can be prepared as one batch of 2 to 25 rows. The confirmation shows every row by verified names, and Finance MCP persists the complete batch atomically or persists none of it.
 - A mixed request for income and expense records uses one atomic batch of 2 to 25 rows. The confirmation preserves the requested order and identifies the type of each row before a single decision.
 - A sale uses `quote_sale` to apply catalog prices by default and `record_sale` to persist one income and all inventory exits together. `list_sales` reads the linked sale afterward. A changed catalog price, insufficient stock, or failed line leaves no partial financial or inventory change.
+- The latest successful sale quote remains usable across conversation turns while its structured result remains in the session history. Accepting its details prepares the confirmation card; only the explicit confirmation control executes the sale. Changed details or unavailable quotes require a new quote.
 - A local Finance → Filesystem → Git end-to-end demo that writes, stages, and commits one generated report after three independent confirmations.
 
 ## Architecture
