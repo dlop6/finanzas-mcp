@@ -4,6 +4,7 @@ import { ConfirmationError } from "./confirmation-error";
 type TransactionKind = "INCOME" | "EXPENSE";
 export type ResolvedTransactionReferences = { accountName: string; categoryName: string };
 export type BatchTransactionReferenceInput = { accountId: number; categoryId: number };
+export type MixedBatchTransactionReferenceInput = BatchTransactionReferenceInput & { type: TransactionKind };
 
 function fail(): never {
   throw new ConfirmationError("TRANSACTION_REFERENCE_LOOKUP_FAILED", "The transaction references could not be verified.");
@@ -37,6 +38,17 @@ export class TransactionReferenceResolver {
       accountName: namedId(content.accounts, accountId),
       categoryName: namedId(content.categories, categoryId, kind),
     }));
+  }
+
+  async resolveMixedBatch(sessionId: string, transactions: readonly MixedBatchTransactionReferenceInput[]): Promise<ResolvedTransactionReferences[]> {
+    const [income, expense] = await Promise.all([this.getContent(sessionId, "INCOME"), this.getContent(sessionId, "EXPENSE")]);
+    return transactions.map(({ accountId, categoryId, type }) => {
+      const content = type === "INCOME" ? income : expense;
+      return {
+        accountName: namedId(content.accounts, accountId),
+        categoryName: namedId(content.categories, categoryId, type),
+      };
+    });
   }
 
   private async getContent(sessionId: string, kind: TransactionKind): Promise<Record<string, unknown>> {

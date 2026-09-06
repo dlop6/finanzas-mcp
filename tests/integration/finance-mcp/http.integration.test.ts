@@ -60,7 +60,7 @@ describe("Finance MCP Streamable HTTP with PostgreSQL", () => {
     const id = await session();
     const listed = await call({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }, id);
     const catalog = await listed.json() as { result: { tools: Array<{ name: string }> } };
-    expect(catalog.result.tools).toHaveLength(26);
+    expect(catalog.result.tools).toHaveLength(27);
     const balance = await call({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "get_current_balance", arguments: {} } }, id);
     const remote = await balance.json() as { result: { structuredContent: { currentBalance: string } } };
     expect(remote.result.structuredContent.currentBalance).toBe("19475.00");

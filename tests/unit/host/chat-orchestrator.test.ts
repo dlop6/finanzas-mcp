@@ -32,6 +32,12 @@ const batchWriteTool: McpTool = {
   inputSchema: { type: "object", additionalProperties: false, properties: {} },
 };
 
+const mixedBatchWriteTool: McpTool = {
+  name: "record_mixed_transactions_batch",
+  description: "Records a mixed batch.",
+  inputSchema: { type: "object", additionalProperties: false, properties: {} },
+};
+
 function response(overrides: Partial<DeepSeekChatResult> = {}): DeepSeekChatResult {
   return {
     content: "Final answer.",
@@ -253,6 +259,50 @@ describe("chat orchestration", () => {
       status: "confirmation_required",
       pendingOperation: { toolName: "record_transactions_batch", arguments: { type: "INCOME", transactions: [{ amount: "10.00" }, { amount: "20.00" }] } },
     });
+    expect(client.toolsCall).not.toHaveBeenCalled();
+  });
+
+  it("normalizes mixed transaction writes into one pending atomic batch without executing MCP", async () => {
+    const client = toolClient();
+    const expenseTool = { ...writeTool, name: "record_expense", description: "Records an expense." };
+    const registry = await registryWith([writeTool, expenseTool, batchWriteTool, mixedBatchWriteTool], client, ["record_income", "record_expense", "record_transactions_batch", "record_mixed_transactions_batch"], "finance-mcp");
+    const deepSeek = llm(response({
+      toolCalls: [
+        { id: "income", type: "function", function: { name: "record_income", arguments: '{"accountId":1,"categoryId":1,"amount":"5000.00","date":"2026-09-05"}' } },
+        { id: "expense", type: "function", function: { name: "record_expense", arguments: '{"accountId":2,"categoryId":4,"amount":"500.00","date":"2026-09-05"}' } },
+      ],
+    }));
+
+    await expect(createChatOrchestrator({ deepSeekClient: deepSeek, toolRegistry: registry }).run(input)).resolves.toMatchObject({
+      status: "confirmation_required",
+      pendingOperation: {
+        toolName: "record_mixed_transactions_batch",
+        arguments: { transactions: [{ type: "INCOME", amount: "5000.00" }, { type: "EXPENSE", amount: "500.00" }] },
+      },
+    });
+    expect(client.toolsCall).not.toHaveBeenCalled();
+  });
+
+  it("normalizes a homogeneous batch and individual expense into one mixed pending batch in source order", async () => {
+    const client = toolClient();
+    const expenseTool = { ...writeTool, name: "record_expense", description: "Records an expense." };
+    const registry = await registryWith([writeTool, expenseTool, batchWriteTool, mixedBatchWriteTool], client, ["record_income", "record_expense", "record_transactions_batch", "record_mixed_transactions_batch"], "finance-mcp");
+    const deepSeek = llm(response({
+      toolCalls: [
+        { id: "incomes", type: "function", function: { name: "record_transactions_batch", arguments: '{"type":"INCOME","transactions":[{"accountId":1,"categoryId":1,"amount":"10.00","date":"2026-09-05"},{"accountId":1,"categoryId":1,"amount":"20.00","date":"2026-09-05"}]}' } },
+        { id: "expense", type: "function", function: { name: "record_expense", arguments: '{"accountId":2,"categoryId":4,"amount":"5.00","date":"2026-09-05"}' } },
+      ],
+    }));
+
+    const result = await createChatOrchestrator({ deepSeekClient: deepSeek, toolRegistry: registry }).run(input);
+    expect(result).toMatchObject({ status: "confirmation_required", pendingOperation: { toolName: "record_mixed_transactions_batch" } });
+    if (result.status === "confirmation_required") {
+      expect(result.pendingOperation.arguments).toEqual({ transactions: [
+        { type: "INCOME", accountId: 1, categoryId: 1, amount: "10.00", date: "2026-09-05" },
+        { type: "INCOME", accountId: 1, categoryId: 1, amount: "20.00", date: "2026-09-05" },
+        { type: "EXPENSE", accountId: 2, categoryId: 4, amount: "5.00", date: "2026-09-05" },
+      ] });
+    }
     expect(client.toolsCall).not.toHaveBeenCalled();
   });
 

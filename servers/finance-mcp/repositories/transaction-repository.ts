@@ -41,7 +41,7 @@ export class TransactionRepository {
     }
   }
 
-  /** Creates a homogeneous batch as one database unit so a rejected row never leaves partial financial data. */
+  /** Creates transaction rows as one database unit so a rejected row never leaves partial financial data. */
   async createBatch(inputs: readonly CreateTransactionInput[]): Promise<Transaction[]> {
     try {
       return await this.prisma.$transaction(async (tx) => {

@@ -29,10 +29,10 @@ function pending(serverId: string, toolName: string, args: Record<string, unknow
 }
 
 function mockRegistry(): HostMcpToolRegistry {
-  const tools = Array.from({ length: 52 }, (_, index) => ({
-    serverId: index < 26 ? "finance-mcp" : index < 40 ? "filesystem-mcp" : "git-mcp",
+  const tools = Array.from({ length: 53 }, (_, index) => ({
+    serverId: index < 27 ? "finance-mcp" : index < 41 ? "filesystem-mcp" : "git-mcp",
     definition: { name: `tool_${index}`, description: "tool", inputSchema: {} },
-    isWriteOperation: index < 26 ? index < 16 : index < 40 ? index < 30 : index < 45,
+    isWriteOperation: index < 27 ? index < 17 : index < 41 ? index < 31 : index < 46,
     client: {} as never,
   }));
   return { list: () => structuredClone(tools) } as unknown as HostMcpToolRegistry;

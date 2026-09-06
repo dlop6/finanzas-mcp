@@ -10,7 +10,7 @@ Finance MCP is a local Model Context Protocol server for the financial administr
 - Authoritative calculations: Finance MCP services. An LLM may explain results but must not calculate or override them.
 - Currency: GTQ only.
 - Canonical demo dataset date: `2026-08-08`.
-- Productive catalog: 26 tools, consisting of 16 writes and 10 reads.
+- Productive catalog: 27 tools, consisting of 17 writes and 10 reads.
 
 This document specifies the public wire contract. It does not expose Prisma models, repository interfaces, handlers, credentials, or other server internals.
 
@@ -81,7 +81,7 @@ Notifications have no ID and produce no response.
 }
 ```
 
-The result contains all 25 definitions in the order listed in [Tool catalog](#5-tool-catalog). Each public definition contains exactly `name`, `description`, and `inputSchema`. The internal `isWriteOperation` flag is deliberately not part of the MCP wire format.
+The result contains all 27 definitions in the order listed in [Tool catalog](#5-tool-catalog). Each public definition contains exactly `name`, `description`, and `inputSchema`. The internal `isWriteOperation` flag is deliberately not part of the MCP wire format.
 
 ### 2.4 Call a tool
 
@@ -281,6 +281,7 @@ No error includes SQL, credentials, `DATABASE_URL`, stack traces, or internal Pr
 | 24 | `evaluate_purchase_viability` | Read |
 | 25 | `get_transaction_reference_data` | Read |
 | 26 | `record_transactions_batch` | Write |
+| 27 | `record_mixed_transactions_batch` | Write |
 
 ## 6. Domain entity map
 
@@ -339,6 +340,22 @@ Purpose: record a homogeneous batch of income or expense transactions atomically
 | `transactions[].description` | No | Non-empty string after trimming. |
 
 Finance MCP validates the full batch and performs all inserts in one database transaction. If any row is rejected, no row is persisted. The structured result contains `currency`, `type`, and the created transactions in the original order. It omits a recalculated balance and batch totals.
+
+### `record_mixed_transactions_batch`
+
+Purpose: record an atomic batch containing both income and expense transactions. Operation: **Write**.
+
+| Parameter | Required | Type and restrictions |
+|---|---|---|
+| `transactions` | Yes | Closed array with 2 to 25 rows, preserved in input order and containing at least one `INCOME` and one `EXPENSE`. |
+| `transactions[].type` | Yes | `INCOME` or `EXPENSE`; the category must match this row type. |
+| `transactions[].accountId` | Yes | Integer, minimum `1`; account must exist. |
+| `transactions[].categoryId` | Yes | Integer, minimum `1`; category must match the row type. |
+| `transactions[].amount` | Yes | Positive money string. |
+| `transactions[].date` | Yes | Strict `YYYY-MM-DD`. |
+| `transactions[].description` | No | Non-empty string after trimming. |
+
+Finance MCP validates every row and writes the full set through one database transaction. A rejected row prevents every insert. The structured result contains `currency` and the created transactions in input order, each with its own type. It omits totals and recalculated balances.
 
 ### 8.1 `record_income`
 

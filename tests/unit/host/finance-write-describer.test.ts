@@ -7,9 +7,9 @@ import {
 const describer = new FinanceWriteOperationDescriber();
 
 describe("Finance write operation descriptions", () => {
-  it("covers exactly the 16 registered Finance MCP writes", () => {
+  it("covers exactly the 17 registered Finance MCP writes", () => {
     expect(financeWriteToolNames).toEqual([
-      "record_income", "record_expense", "record_transactions_batch", "update_transaction", "delete_transaction",
+      "record_income", "record_expense", "record_transactions_batch", "record_mixed_transactions_batch", "update_transaction", "delete_transaction",
       "record_debt", "update_debt", "mark_debt_paid", "delete_debt",
       "record_receivable", "update_receivable", "mark_receivable_collected", "delete_receivable",
       "create_product", "update_product", "record_inventory_movement",
@@ -33,6 +33,28 @@ describe("Finance write operation descriptions", () => {
       { sessionId: "session-a" },
     )).resolves.toBe('Registrar un ingreso de GTQ 3500.00 en la cuenta Banco, categoría Otros ingresos, con fecha 2026-11-16, descripción "prueba".');
     expect(resolve).toHaveBeenCalledWith("session-a", "INCOME", 2, 3);
+  });
+
+  it("describes a mixed batch with verified names in original order", async () => {
+    const resolveMixedBatch = vi.fn().mockResolvedValue([
+      { accountName: "Efectivo", categoryName: "Ventas" },
+      { accountName: "Banco", categoryName: "Marketing" },
+    ]);
+    const referenceAware = new FinanceWriteOperationDescriber({ resolveMixedBatch } as never);
+    const result = await referenceAware.describe(
+      { toolCallId: "mixed", serverId: "finance-mcp", toolName: "record_mixed_transactions_batch", arguments: { transactions: [
+        { type: "INCOME", accountId: 1, categoryId: 1, amount: "5000.00", date: "2026-09-05" },
+        { type: "EXPENSE", accountId: 2, categoryId: 5, amount: "1200.00", date: "2026-09-05", description: "Campaña" },
+      ] } },
+      { sessionId: "session-a" },
+    );
+    expect(result).toMatchObject({
+      preview: { kind: "mixed_transaction_batch", items: [
+        { type: "INCOME", accountName: "Efectivo", categoryName: "Ventas" },
+        { type: "EXPENSE", accountName: "Banco", categoryName: "Marketing", description: "Campaña" },
+      ] },
+    });
+    expect(resolveMixedBatch).toHaveBeenCalledWith("session-a", expect.any(Array));
   });
 
   it("describes updates in stable field order and fails closed for unknown writes", () => {
@@ -62,11 +84,13 @@ describe("Finance write operation descriptions", () => {
     ["create_product", { name: "Product", stock: 1, unitCost: "1.00", salePrice: "2.00", minimumStock: 0 }],
     ["record_inventory_movement", { productId: 1, type: "IN", quantity: 1, date: "2026-08-24" }],
   ])("has a deterministic template for %s", (toolName, arguments_) => {
-    expect(describer.describe({
+    const presentation = describer.describe({
       toolCallId: "call",
       serverId: "finance-mcp",
       toolName,
       arguments: arguments_,
-    })).toMatch(/^.+\.$/);
+    });
+    if (presentation instanceof Promise) throw new Error("The synchronous describer must not return a promise.");
+    expect(typeof presentation === "string" ? presentation : presentation.description).toMatch(/^.+\.$/);
   });
 });

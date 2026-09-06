@@ -57,7 +57,7 @@ export async function startHostMcpRuntime(
     await registerFilesystemMcpTools(registry, filesystemClient);
     await registerGitMcpTools(registry, gitClient);
     const tools = registry.list();
-    if (tools.length !== 52 || tools.filter((tool) => tool.isWriteOperation).length !== 25) {
+    if (tools.length !== 53 || tools.filter((tool) => tool.isWriteOperation).length !== 26) {
       throw new HostMcpRuntimeError("INVALID_CATALOG", "The Host MCP catalog is incomplete.", stage);
     }
 

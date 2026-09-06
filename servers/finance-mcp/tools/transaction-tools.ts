@@ -15,6 +15,12 @@ const batchTransaction = {
   required: ["accountId", "categoryId", "amount", "date"],
   properties: { accountId: positiveId, categoryId: positiveId, amount: money, date, description },
 } as const;
+const mixedBatchTransaction = {
+  type: "object",
+  additionalProperties: false,
+  required: ["type", "accountId", "categoryId", "amount", "date"],
+  properties: { type: { type: "string", enum: ["INCOME", "EXPENSE"] }, accountId: positiveId, categoryId: positiveId, amount: money, date, description },
+} as const;
 
 function success(text: string, structuredContent: Record<string, unknown>): McpCallToolResult {
   return { content: [{ type: "text", text }], structuredContent };
@@ -46,6 +52,14 @@ export function createTransactionTools(service: TransactionService): FinanceTool
         properties: { type: { type: "string", enum: ["INCOME", "EXPENSE"] }, transactions: { type: "array", minItems: 2, maxItems: 25, items: batchTransaction } },
       },
       handler: (args) => guarded(() => service.recordBatch(args as never), (result) => success("Transaction batch recorded.", result))(),
+    },
+    {
+      name: "record_mixed_transactions_batch", description: "Record a mixed batch of 2 to 25 income and expense transactions atomically.", isWriteOperation: true,
+      inputSchema: {
+        type: "object", additionalProperties: false, required: ["transactions"],
+        properties: { transactions: { type: "array", minItems: 2, maxItems: 25, items: mixedBatchTransaction } },
+      },
+      handler: (args) => guarded(() => service.recordMixedBatch(args as never), (result) => success("Mixed transaction batch recorded.", result))(),
     },
     {
       name: "list_transactions", description: "List financial transactions.", isWriteOperation: false,

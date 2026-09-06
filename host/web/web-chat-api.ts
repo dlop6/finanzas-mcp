@@ -5,7 +5,7 @@ import {
 } from "@/host/context";
 import { ChatOrchestrationError } from "@/host/orchestration/chat-orchestrator";
 import { createWebHostSystemPrompt } from "./web-host-runtime";
-import type { TransactionBatchPreview } from "@/host/confirmation/finance-write-describer";
+import type { TransactionPreview } from "@/host/confirmation/finance-write-describer";
 
 export const WEB_CHAT_MESSAGE_MAX_LENGTH = 4_000;
 
@@ -31,7 +31,7 @@ export type WebChatResponse =
         toolName: string;
       arguments: Record<string, unknown>;
       description: string;
-      preview?: TransactionBatchPreview;
+      preview?: TransactionPreview;
       };
     }
   | { status: "cancelled"; sessionId: string; message: string };

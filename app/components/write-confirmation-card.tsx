@@ -8,7 +8,7 @@ export type PendingOperationView = {
   toolName: string;
   arguments: Record<string, unknown>;
   description: string;
-  preview?: TransactionBatchPreview;
+  preview?: TransactionPreview;
 };
 
 export type TransactionBatchPreview = {
@@ -17,6 +17,14 @@ export type TransactionBatchPreview = {
   currency: "GTQ";
   items: Array<{ accountName: string; categoryName: string; amount: string; date: string; description?: string }>;
 };
+
+export type MixedTransactionBatchPreview = {
+  kind: "mixed_transaction_batch";
+  currency: "GTQ";
+  items: Array<{ type: "INCOME" | "EXPENSE"; accountName: string; categoryName: string; amount: string; date: string; description?: string }>;
+};
+
+export type TransactionPreview = TransactionBatchPreview | MixedTransactionBatchPreview;
 
 export type ConfirmationState = "pending" | "confirming" | "cancelling" | "confirmed" | "rejected" | "unknown" | "cancelled" | "error";
 
@@ -41,6 +49,10 @@ function stateLabel(state: ConfirmationState): string {
   if (state === "cancelled") return "CANCELADA";
   if (state === "error") return "ESTADO NO DISPONIBLE";
   return "CONFIRMACIÓN REQUERIDA";
+}
+
+function transactionTypeLabel(item: TransactionPreview["items"][number]): string {
+  return "type" in item && item.type === "INCOME" ? "Ingreso" : "Gasto";
 }
 
 export default function WriteConfirmationCard({ messageId, operation, state, stateMessage, onDecision }: WriteConfirmationCardProps) {
@@ -72,12 +84,12 @@ export default function WriteConfirmationCard({ messageId, operation, state, sta
       {state === "cancelled" ? <p className={styles.confirmationResult}>Operación cancelada.</p> : null}
       {state === "confirmed" ? <p className={styles.confirmationResult}>Operación ejecutada.</p> : null}
       {stateMessage ? <p className={styles.confirmationError} role="alert">{stateMessage}</p> : null}
-      {operation.preview?.kind === "transaction_batch" ? (
+      {operation.preview ? (
         <div className={styles.confirmationTableWrap} tabIndex={0} aria-label="Vista previa completa del lote">
           <table className={styles.confirmationTable}>
-            <caption>{operation.preview.transactionType === "INCOME" ? "Ingresos" : "Gastos"} que se registrarán en una sola operación</caption>
-            <thead><tr><th scope="col">N.º</th><th scope="col">Monto</th><th scope="col">Fecha</th><th scope="col">Cuenta</th><th scope="col">Categoría</th><th scope="col">Descripción</th></tr></thead>
-            <tbody>{operation.preview.items.map((item, index) => <tr key={`${item.date}-${item.amount}-${index}`}><td>{index + 1}</td><td>{operation.preview!.currency} {item.amount}</td><td><time dateTime={item.date}>{item.date}</time></td><td>{item.accountName}</td><td>{item.categoryName}</td><td>{item.description ?? "Sin descripción"}</td></tr>)}</tbody>
+            <caption>{operation.preview.kind === "transaction_batch" ? `${operation.preview.transactionType === "INCOME" ? "Ingresos" : "Gastos"} que se registrarán en una sola operación` : "Ingresos y gastos que se registrarán en una sola operación"}</caption>
+            <thead><tr><th scope="col">N.º</th>{operation.preview.kind === "mixed_transaction_batch" ? <th scope="col">Tipo</th> : null}<th scope="col">Monto</th><th scope="col">Fecha</th><th scope="col">Cuenta</th><th scope="col">Categoría</th><th scope="col">Descripción</th></tr></thead>
+            <tbody>{operation.preview.items.map((item, index) => <tr key={`${item.date}-${item.amount}-${index}`}><td>{index + 1}</td>{operation.preview!.kind === "mixed_transaction_batch" ? <td>{transactionTypeLabel(item)}</td> : null}<td>{operation.preview!.currency} {item.amount}</td><td><time dateTime={item.date}>{item.date}</time></td><td>{item.accountName}</td><td>{item.categoryName}</td><td>{item.description ?? "Sin descripción"}</td></tr>)}</tbody>
           </table>
         </div>
       ) : null}

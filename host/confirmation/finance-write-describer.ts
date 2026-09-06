@@ -13,12 +13,20 @@ export type TransactionBatchPreview = {
   items: Array<{ accountName: string; categoryName: string; amount: string; date: string; description?: string }>;
 };
 
-export type WriteOperationPresentation = { description: string; preview?: TransactionBatchPreview };
+export type MixedTransactionBatchPreview = {
+  kind: "mixed_transaction_batch";
+  currency: "GTQ";
+  items: Array<{ type: "INCOME" | "EXPENSE"; accountName: string; categoryName: string; amount: string; date: string; description?: string }>;
+};
+
+export type TransactionPreview = TransactionBatchPreview | MixedTransactionBatchPreview;
+export type WriteOperationPresentation = { description: string; preview?: TransactionPreview };
 
 export const financeWriteToolNames = [
   "record_income",
   "record_expense",
   "record_transactions_batch",
+  "record_mixed_transactions_batch",
   "update_transaction",
   "delete_transaction",
   "record_debt",
@@ -74,6 +82,19 @@ function batchTransactions(args: Record<string, unknown>): Array<{ accountId: nu
   });
 }
 
+function mixedBatchTransactions(args: Record<string, unknown>): Array<{ type: "INCOME" | "EXPENSE"; accountId: number; categoryId: number; amount: string; date: string; description?: string }> {
+  const values = args.transactions;
+  if (!Array.isArray(values) || values.length < 2 || values.length > 25) return fail();
+  const transactions = values.map((value) => {
+    const item = object(value as Record<string, unknown>);
+    const type = text(item, "type");
+    if (type !== "INCOME" && type !== "EXPENSE") return fail();
+    const result = { type: type as "INCOME" | "EXPENSE", accountId: integer(item, "accountId"), categoryId: integer(item, "categoryId"), amount: text(item, "amount"), date: text(item, "date") };
+    return Object.hasOwn(item, "description") ? { ...result, description: text(item, "description") } : result;
+  });
+  return new Set(transactions.map((transaction) => transaction.type)).size === 2 ? transactions : fail();
+}
+
 function updateFields(args: Record<string, unknown>, fields: readonly [string, string, "text" | "money" | "integer"][]): string {
   const changes = fields.flatMap(([key, label, type]) => {
     if (!Object.hasOwn(args, key)) return [];
@@ -115,6 +136,26 @@ export class FinanceWriteOperationDescriber implements WriteOperationDescriber {
             transactionType: type,
             currency: "GTQ" as const,
             items: transactions.map((transaction, index) => ({
+              accountName: references[index]!.accountName,
+              categoryName: references[index]!.categoryName,
+              amount: transaction.amount,
+              date: transaction.date,
+              ...(transaction.description === undefined ? {} : { description: transaction.description }),
+            })),
+          },
+        }));
+      }
+      case "record_mixed_transactions_batch": {
+        const transactions = mixedBatchTransactions(args);
+        const description = `Registrar ${transactions.length} movimientos, incluidos ingresos y gastos, en una sola operación. No se guardará ninguno si una fila falla.`;
+        if (!this.transactionReferences || !context) return { description };
+        return this.transactionReferences.resolveMixedBatch(context.sessionId, transactions).then((references) => ({
+          description,
+          preview: {
+            kind: "mixed_transaction_batch" as const,
+            currency: "GTQ" as const,
+            items: transactions.map((transaction, index) => ({
+              type: transaction.type,
               accountName: references[index]!.accountName,
               categoryName: references[index]!.categoryName,
               amount: transaction.amount,

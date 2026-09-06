@@ -30,6 +30,27 @@ describe("TransactionReferenceResolver", () => {
     expect(toolsCall).toHaveBeenCalledWith("get_transaction_reference_data", { type: "INCOME" }, { sessionId: "chat-a" });
   });
 
+  it("resolves mixed rows against their matching reference catalogs", async () => {
+    const { registry, toolsCall } = await registryWith({
+      content: [],
+      structuredContent: {
+        accounts: [{ id: 1, name: "Efectivo", type: "CASH" }],
+        categories: [{ id: 2, name: "Ventas", type: "INCOME" }],
+      },
+    });
+    toolsCall.mockResolvedValueOnce({ content: [], structuredContent: { accounts: [{ id: 1, name: "Efectivo", type: "CASH" }], categories: [{ id: 2, name: "Ventas", type: "INCOME" }] } });
+    toolsCall.mockResolvedValueOnce({ content: [], structuredContent: { accounts: [{ id: 1, name: "Efectivo", type: "CASH" }], categories: [{ id: 3, name: "Marketing", type: "EXPENSE" }] } });
+
+    await expect(new TransactionReferenceResolver(registry).resolveMixedBatch("chat-a", [
+      { type: "INCOME", accountId: 1, categoryId: 2 },
+      { type: "EXPENSE", accountId: 1, categoryId: 3 },
+    ])).resolves.toEqual([
+      { accountName: "Efectivo", categoryName: "Ventas" },
+      { accountName: "Efectivo", categoryName: "Marketing" },
+    ]);
+    expect(toolsCall).toHaveBeenCalledTimes(2);
+  });
+
   it("fails closed when a proposed category is absent or has the wrong transaction type", async () => {
     const { registry } = await registryWith({
       content: [],

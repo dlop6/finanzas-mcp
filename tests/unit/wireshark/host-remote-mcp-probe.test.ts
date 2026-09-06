@@ -36,7 +36,7 @@ function fakeClient(logs: InMemoryMcpInteractionLogStore, probeSessionId: string
 }
 
 describe("Host remote MCP Wireshark probe", () => {
-  it("uses the Host client lifecycle, discovers 26 tools, calls one read, and creates a safe summary", async () => {
+  it("uses the Host client lifecycle, discovers 27 tools, calls one read, and creates a safe summary", async () => {
     const logs = new InMemoryMcpInteractionLogStore();
     const client = fakeClient(logs, "probe-uuid");
     const writeSummary = vi.fn(async () => undefined);
@@ -51,7 +51,7 @@ describe("Host remote MCP Wireshark probe", () => {
     expect(client.toolsList).toHaveBeenCalledOnce();
     expect(client.toolsCall).toHaveBeenCalledWith("get_current_balance", {}, { sessionId: "probe-uuid" });
     expect(client.close).toHaveBeenCalledOnce();
-    expect(summary).toMatchObject({ toolCount: 26, readTool: "get_current_balance", transport: "STREAMABLE_HTTP", lifecycleValidated: true });
+    expect(summary).toMatchObject({ toolCount: 27, readTool: "get_current_balance", transport: "STREAMABLE_HTTP", lifecycleValidated: true });
     expect(JSON.stringify(summary)).not.toContain("probe-uuid");
     expect(writeSummary).toHaveBeenCalledWith(summary);
   });

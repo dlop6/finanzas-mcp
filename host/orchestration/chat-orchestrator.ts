@@ -85,30 +85,78 @@ type PreparedToolCall = {
   arguments: Record<string, unknown>;
 };
 
-const BATCH_TOOL_NAME = "record_transactions_batch";
+const HOMOGENEOUS_BATCH_TOOL_NAME = "record_transactions_batch";
+const MIXED_BATCH_TOOL_NAME = "record_mixed_transactions_batch";
+type TransactionType = "INCOME" | "EXPENSE";
+type ProposedTransaction = { type: TransactionType; accountId: number; categoryId: number; amount: string; date: string; description?: string };
 
-/** Converts equivalent model-issued transaction calls into one stored, confirmable batch without executing any write. */
-function normalizeTransactionWriteBatch(toolRegistry: HostMcpToolRegistry, prepared: readonly PreparedToolCall[]): PreparedToolCall | null {
-  if (prepared.length < 2 || prepared.length > 25) return null;
-  const firstName = prepared[0]?.tool.definition.name;
-  if ((firstName !== "record_income" && firstName !== "record_expense") || prepared.some((call) => call.tool.definition.name !== firstName || call.tool.serverId !== "finance-mcp")) {
-    return null;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function proposedTransaction(value: unknown, type: TransactionType): ProposedTransaction | null {
+  if (!isRecord(value) || !Number.isInteger(value.accountId) || (value.accountId as number) < 1 || !Number.isInteger(value.categoryId) || (value.categoryId as number) < 1 || typeof value.amount !== "string" || typeof value.date !== "string") return null;
+  if (value.description !== undefined && typeof value.description !== "string") return null;
+  return {
+    type,
+    accountId: value.accountId as number,
+    categoryId: value.categoryId as number,
+    amount: value.amount,
+    date: value.date,
+    ...(value.description === undefined ? {} : { description: value.description }),
+  };
+}
+
+function flattenTransactionWrite(call: PreparedToolCall): ProposedTransaction[] | null {
+  if (call.tool.serverId !== "finance-mcp") return null;
+  if (call.tool.definition.name === "record_income") {
+    const transaction = proposedTransaction(call.arguments, "INCOME");
+    return transaction ? [transaction] : null;
   }
+  if (call.tool.definition.name === "record_expense") {
+    const transaction = proposedTransaction(call.arguments, "EXPENSE");
+    return transaction ? [transaction] : null;
+  }
+  if (call.tool.definition.name !== HOMOGENEOUS_BATCH_TOOL_NAME || !Array.isArray(call.arguments.transactions) || (call.arguments.type !== "INCOME" && call.arguments.type !== "EXPENSE")) return null;
+  const batchType: TransactionType = call.arguments.type === "INCOME" ? "INCOME" : "EXPENSE";
+  const transactions = call.arguments.transactions.map((value) => proposedTransaction(value, batchType));
+  return transactions.every((transaction): transaction is ProposedTransaction => transaction !== null) ? transactions : null;
+}
+
+/** Converts related model-issued transaction writes into one stored confirmation without executing any write. */
+function normalizeTransactionWriteBatch(toolRegistry: HostMcpToolRegistry, prepared: readonly PreparedToolCall[]): PreparedToolCall | null {
+  if (prepared.length < 2 || prepared.some((call) => !call.tool.isWriteOperation)) return null;
+  const groups = prepared.map(flattenTransactionWrite);
+  if (groups.some((group) => group === null)) return null;
+  const transactions = groups.flatMap((group) => group ?? []);
+  if (transactions.length < 2 || transactions.length > 25) return null;
+  const mixed = new Set(transactions.map((transaction) => transaction.type)).size === 2;
+  const toolName = mixed ? MIXED_BATCH_TOOL_NAME : HOMOGENEOUS_BATCH_TOOL_NAME;
   let tool: RegisteredMcpTool;
   try {
-    tool = toolRegistry.resolve(BATCH_TOOL_NAME);
+    tool = toolRegistry.resolve(toolName);
   } catch {
     return null;
   }
   if (!tool.isWriteOperation || tool.serverId !== "finance-mcp") return null;
-  const arguments_ = {
-    type: firstName === "record_income" ? "INCOME" : "EXPENSE",
-    transactions: prepared.map((call) => structuredClone(call.arguments)),
-  };
+  const arguments_ = mixed
+    ? { transactions: structuredClone(transactions) }
+    : {
+        type: transactions[0]!.type,
+        transactions: transactions.map((transaction) =>
+          structuredClone({
+            accountId: transaction.accountId,
+            categoryId: transaction.categoryId,
+            amount: transaction.amount,
+            date: transaction.date,
+            ...(transaction.description === undefined ? {} : { description: transaction.description }),
+          }),
+        ),
+      };
   const call: DeepSeekToolCall = {
-    id: `batch-${prepared[0].call.id}`,
+    id: `batch-${prepared[0]!.call.id}`,
     type: "function",
-    function: { name: BATCH_TOOL_NAME, arguments: JSON.stringify(arguments_) },
+    function: { name: toolName, arguments: JSON.stringify(arguments_) },
   };
   return { call, tool, arguments: arguments_ };
 }
@@ -343,7 +391,7 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
         content: serializeToolResult(toolResult),
       };
       if (toolResult.isError) {
-        const response = fallbackResponse(input.pendingOperation.toolName === BATCH_TOOL_NAME
+        const response = fallbackResponse([HOMOGENEOUS_BATCH_TOOL_NAME, MIXED_BATCH_TOOL_NAME].includes(input.pendingOperation.toolName)
           ? "No se registró ningún movimiento del lote."
           : "La operación fue rechazada por Finance MCP. No se completó el cambio solicitado.");
         return {
@@ -363,7 +411,7 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
           toolMessage,
         ]);
       } catch {
-        finalResponse = fallbackResponse(input.pendingOperation.toolName === BATCH_TOOL_NAME ? "Se registraron correctamente los movimientos del lote." : "La operación se ejecutó correctamente.");
+        finalResponse = fallbackResponse([HOMOGENEOUS_BATCH_TOOL_NAME, MIXED_BATCH_TOOL_NAME].includes(input.pendingOperation.toolName) ? "Se registraron correctamente los movimientos del lote." : "La operación se ejecutó correctamente.");
       }
       ensureFinalContent(finalResponse);
       return {

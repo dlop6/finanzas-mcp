@@ -200,6 +200,38 @@ describe("ChatClient", () => {
     expect(screen.getByRole("table").textContent).not.toContain("accountId");
   });
 
+  it("renders a mixed batch preview in source order with a textual transaction type", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      status: "confirmation_required",
+      sessionId: "session-1",
+      message: "Revisa los movimientos.",
+      pendingOperation: {
+        serverId: "finance-mcp",
+        toolName: "record_mixed_transactions_batch",
+        arguments: { transactions: [{ type: "INCOME", accountId: 1, categoryId: 1, amount: "5000.00", date: "2026-09-05" }, { type: "EXPENSE", accountId: 2, categoryId: 4, amount: "500.00", date: "2026-09-05" }] },
+        description: "Registrar 2 movimientos, incluidos ingresos y gastos, en una sola operación.",
+        preview: {
+          kind: "mixed_transaction_batch",
+          currency: "GTQ",
+          items: [
+            { type: "INCOME", accountName: "Efectivo", categoryName: "Ventas", amount: "5000.00", date: "2026-09-05" },
+            { type: "EXPENSE", accountName: "Banco", categoryName: "Inventario", amount: "500.00", date: "2026-09-05" },
+          ],
+        },
+      },
+    })));
+    render(<ChatClient />);
+    fireEvent.change(screen.getByLabelText("Mensaje"), { target: { value: "Registra ingresos y gastos" } });
+    fireEvent.submit(screen.getByLabelText("Mensaje").closest("form")!);
+
+    await screen.findByText("Ingresos y gastos que se registrarán en una sola operación");
+    const table = screen.getByRole("table");
+    expect(table.textContent).toContain("Tipo");
+    expect(table.textContent).toMatch(/Ingreso[\s\S]*Gasto/);
+    expect(table.textContent).toMatch(/Efectivo[\s\S]*Banco/);
+    expect(table.textContent).not.toContain("accountId");
+  });
+
   it("cancels a pending operation without creating a user message", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({

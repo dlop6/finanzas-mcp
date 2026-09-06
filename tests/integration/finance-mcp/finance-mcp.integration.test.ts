@@ -27,7 +27,7 @@ describe("Finance MCP against isolated PostgreSQL", () => {
   it("discovers the complete productive catalog", async () => {
     const { tools } = await harness.listTools();
     expect(tools.map((tool) => tool.name)).toEqual([
-      "record_income", "record_expense", "record_transactions_batch", "list_transactions", "update_transaction", "delete_transaction",
+      "record_income", "record_expense", "record_transactions_batch", "record_mixed_transactions_batch", "list_transactions", "update_transaction", "delete_transaction",
       "record_debt", "list_debts", "update_debt", "mark_debt_paid", "delete_debt",
       "record_receivable", "list_receivables", "update_receivable", "mark_receivable_collected", "delete_receivable",
       "create_product", "list_products", "update_product", "record_inventory_movement", "list_low_stock_products",
@@ -74,7 +74,7 @@ describe("Finance MCP against isolated PostgreSQL", () => {
     expect(data<{ currentBalance: string }>(await harness.callTool("get_current_balance", {})).currentBalance).toBe("19475.00");
   });
 
-  it("records a homogeneous batch atomically and rolls it back when one row is invalid", async () => {
+  it("records homogeneous and mixed batches atomically and rolls them back when one row is invalid", async () => {
     const before = await prisma.transaction.count();
     const created = await harness.callTool("record_transactions_batch", {
       type: "EXPENSE",
@@ -97,7 +97,30 @@ describe("Finance MCP against isolated PostgreSQL", () => {
       ],
     });
     expect(rejected.isError).toBe(true);
-    expect(await prisma.transaction.count()).toBe(before + 2);
+
+    const mixed = await harness.callTool("record_mixed_transactions_batch", {
+      transactions: [
+        { type: "INCOME", accountId: 1, categoryId: 1, amount: "30.00", date: "2026-08-14", description: "Mixed income" },
+        { type: "EXPENSE", accountId: 2, categoryId: 4, amount: "15.00", date: "2026-08-15", description: "Mixed expense" },
+      ],
+    });
+    expect(mixed).toMatchObject({ structuredContent: { currency: "GTQ", transactions: [{ type: "INCOME", amount: "30.00" }, { type: "EXPENSE", amount: "15.00" }] } });
+
+    const rejectedMixed = await harness.callTool("record_mixed_transactions_batch", {
+      transactions: [
+        { type: "INCOME", accountId: 1, categoryId: 1, amount: "31.00", date: "2026-08-16" },
+        { type: "EXPENSE", accountId: 999, categoryId: 4, amount: "16.00", date: "2026-08-17" },
+      ],
+    });
+    expect(rejectedMixed.isError).toBe(true);
+    const nonMixed = await harness.callTool("record_mixed_transactions_batch", {
+      transactions: [
+        { type: "INCOME", accountId: 1, categoryId: 1, amount: "1.00", date: "2026-08-18" },
+        { type: "INCOME", accountId: 1, categoryId: 1, amount: "2.00", date: "2026-08-19" },
+      ],
+    });
+    expect(nonMixed.isError).toBe(true);
+    expect(await prisma.transaction.count()).toBe(before + 4);
   });
 
   it("supports debt and receivable lifecycles without creating transactions", async () => {

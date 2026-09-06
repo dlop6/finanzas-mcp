@@ -20,27 +20,30 @@ type ApiSuccess =
   | { status: "cancelled"; sessionId: string; message: string };
 type ApiError = { error: { code: string; message: string }; sessionId?: string };
 
-function isTransactionBatchPreview(value: unknown): value is PendingOperationView["preview"] {
+function isTransactionPreview(value: unknown): value is PendingOperationView["preview"] {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const preview = value as Record<string, unknown>;
-  return preview.kind === "transaction_batch"
-    && (preview.transactionType === "INCOME" || preview.transactionType === "EXPENSE")
-    && preview.currency === "GTQ"
-    && Array.isArray(preview.items)
-    && preview.items.every((item) => {
+  const items = preview.items;
+  const validItems = Array.isArray(items) && items.every((item) => {
       if (typeof item !== "object" || item === null || Array.isArray(item)) return false;
       const row = item as Record<string, unknown>;
       return typeof row.accountName === "string" && typeof row.categoryName === "string"
         && typeof row.amount === "string" && typeof row.date === "string"
         && (row.description === undefined || typeof row.description === "string");
     });
+  if (!validItems || preview.currency !== "GTQ") return false;
+  if (preview.kind === "transaction_batch") return preview.transactionType === "INCOME" || preview.transactionType === "EXPENSE";
+  return preview.kind === "mixed_transaction_batch" && items.every((item) => {
+    const row = item as Record<string, unknown>;
+    return row.type === "INCOME" || row.type === "EXPENSE";
+  });
 }
 
 function isPendingOperation(value: unknown): value is PendingOperationView {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const operation = value as Record<string, unknown>;
   return typeof operation.serverId === "string" && typeof operation.toolName === "string" && typeof operation.description === "string" && typeof operation.arguments === "object" && operation.arguments !== null && !Array.isArray(operation.arguments)
-    && (operation.preview === undefined || isTransactionBatchPreview(operation.preview));
+    && (operation.preview === undefined || isTransactionPreview(operation.preview));
 }
 
 function isApiSuccess(value: unknown): value is ApiSuccess {
