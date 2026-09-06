@@ -108,9 +108,9 @@ export async function verifyFinanceSeed(prisma: PrismaClient): Promise<void> {
     FROM information_schema.columns
     WHERE table_schema = 'public'
       AND data_type = 'numeric'
-      AND column_name IN ('minimumSafetyBalance', 'initialBalance', 'amount', 'unitCost', 'salePrice')
+      AND column_name IN ('minimumSafetyBalance', 'initialBalance', 'amount', 'unitCost', 'salePrice', 'catalogUnitPrice', 'appliedUnitPrice')
   `;
-  assertCondition(numericColumns.length === 8, "Expected all monetary columns to use numeric precision");
+  assertCondition(numericColumns.length === 11, "Expected all monetary columns to use numeric precision");
   assertCondition(numericColumns.every((column) => column.numeric_scale === 2), "Monetary columns must use scale 2");
 }
 

@@ -4,6 +4,7 @@ import {
   type SessionChatService,
 } from "@/host/context";
 import { ChatOrchestrationError } from "@/host/orchestration/chat-orchestrator";
+import { ConfirmationError } from "@/host/confirmation";
 import { createWebHostSystemPrompt } from "./web-host-runtime";
 import type { TransactionPreview } from "@/host/confirmation/finance-write-describer";
 
@@ -44,6 +45,7 @@ export type WebChatErrorCode =
   | "WRITE_BATCH_PREPARATION_FAILED"
   | "WRITE_BATCH_LIMIT_EXCEEDED"
   | "WRITE_REFERENCE_FAILED"
+  | "SALE_PREPARATION_FAILED"
   | "HOST_UNAVAILABLE"
   | "CHAT_FAILED";
 
@@ -67,6 +69,7 @@ function errorResponse(code: WebChatErrorCode, status: number, sessionId?: strin
     WRITE_BATCH_PREPARATION_FAILED: "No se pudo preparar el conjunto de movimientos. No se realizó ninguna operación.",
     WRITE_BATCH_LIMIT_EXCEEDED: "El lote supera el máximo de 25 movimientos.",
     WRITE_REFERENCE_FAILED: "Una cuenta o categoría ya no está disponible.",
+    SALE_PREPARATION_FAILED: "No se pudo preparar la venta. No se modificó el inventario ni se registró el ingreso.",
     HOST_UNAVAILABLE: "El servicio de chat no está disponible en este momento.",
     CHAT_FAILED: "No fue posible completar la respuesta del chat.",
   };
@@ -190,7 +193,9 @@ export function createWebChatHandler(getRuntime: WebChatRuntimeProvider): (reque
       if (error instanceof ChatOrchestrationError) {
         if (error.code === "UNSUPPORTED_WRITE_BATCH") return errorResponse("WRITE_BATCH_PREPARATION_FAILED", 422, sessionId);
         if (error.code === "INVALID_TOOL_ARGUMENTS") return errorResponse("WRITE_BATCH_PREPARATION_FAILED", 422, sessionId);
+        if (error.code === "SALE_QUOTE_REQUIRED") return errorResponse("SALE_PREPARATION_FAILED", 422, sessionId);
       }
+      if (error instanceof ConfirmationError && error.code === "TRANSACTION_REFERENCE_LOOKUP_FAILED") return errorResponse("SALE_PREPARATION_FAILED", 422, sessionId);
       return errorResponse("CHAT_FAILED", 502, sessionId);
     }
   };

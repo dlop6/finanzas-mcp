@@ -55,7 +55,7 @@ describe("Git MCP Host integration", () => {
     expect(client.toolsCall).not.toHaveBeenCalled();
   });
 
-  it("keeps all three server catalogs isolated while exposing 53 classified tools", async () => {
+  it("keeps all three server catalogs isolated while exposing 56 classified tools", async () => {
     const clientFor = (metadata: Readonly<Record<string, { isWriteOperation: boolean }>>): McpToolClient => ({
       toolsList: vi.fn(async () => ({ tools: Object.keys(metadata).map(tool) })),
       toolsCall: vi.fn(async () => ({ content: [] })),
@@ -68,9 +68,9 @@ describe("Git MCP Host integration", () => {
     await registerFilesystemMcpTools(registry, filesystem);
     await registerGitMcpTools(registry, git);
 
-    expect(registry.list()).toHaveLength(53);
-    expect(registry.list().filter((entry) => entry.isWriteOperation)).toHaveLength(26);
-    expect(registry.list().filter((entry) => !entry.isWriteOperation)).toHaveLength(27);
+    expect(registry.list()).toHaveLength(56);
+    expect(registry.list().filter((entry) => entry.isWriteOperation)).toHaveLength(27);
+    expect(registry.list().filter((entry) => !entry.isWriteOperation)).toHaveLength(29);
     expect(registry.resolve("git_log")).toMatchObject({ serverId: GIT_MCP_SERVER_ID, client: git });
   });
 

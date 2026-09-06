@@ -50,6 +50,12 @@ enum InventoryMovementType {
   OUT
 }
 
+enum SalePricingMode {
+  CATALOG
+  CUSTOM_UNIT
+  CUSTOM_LINE
+}
+
 model Business {
   id                   Int            @id @default(autoincrement())
   name                 String
@@ -65,6 +71,7 @@ model Business {
   receivables          Receivable[]
   products             Product[]
   inventoryMovements   InventoryMovement[]
+  sales                Sale[]
 }
 
 model Account {
@@ -111,6 +118,7 @@ model Transaction {
   business   Business        @relation(fields: [businessId], references: [id], onDelete: Restrict)
   account    Account         @relation(fields: [accountId], references: [id], onDelete: Restrict)
   category   Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  sale       Sale?
 
   @@index([businessId])
   @@index([accountId])
@@ -198,8 +206,38 @@ model InventoryMovement {
   updatedAt  DateTime              @updatedAt @db.Timestamptz(3)
   business   Business              @relation(fields: [businessId], references: [id], onDelete: Restrict)
   product    Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  saleLine   SaleLine?
 
   @@index([businessId])
   @@index([productId])
   @@index([productId, date])
+}
+
+model Sale {
+  id            Int      @id @default(autoincrement())
+  businessId    Int
+  transactionId Int      @unique
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  lines         SaleLine[]
+
+  @@index([businessId])
+}
+
+model SaleLine {
+  id                  Int             @id @default(autoincrement())
+  saleId              Int
+  inventoryMovementId Int             @unique
+  pricingMode         SalePricingMode
+  catalogUnitPrice    Decimal         @db.Decimal(14, 2)
+  appliedUnitPrice    Decimal?        @db.Decimal(14, 2)
+  amount              Decimal         @db.Decimal(14, 2)
+  createdAt           DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
+  sale                Sale            @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  inventoryMovement   InventoryMovement @relation(fields: [inventoryMovementId], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
 }

@@ -17,6 +17,7 @@ export type ChatOrchestrationErrorCode =
   | "INVALID_TOOL_ARGUMENTS"
   | "UNKNOWN_TOOL"
   | "UNSUPPORTED_WRITE_BATCH"
+  | "SALE_QUOTE_REQUIRED"
   | "TOOL_ROUND_LIMIT"
   | "INVALID_MODEL_RESPONSE"
   | "PENDING_OPERATION_MISMATCH"
@@ -87,6 +88,7 @@ type PreparedToolCall = {
 
 const HOMOGENEOUS_BATCH_TOOL_NAME = "record_transactions_batch";
 const MIXED_BATCH_TOOL_NAME = "record_mixed_transactions_batch";
+const SALE_TOOL_NAME = "record_sale";
 type TransactionType = "INCOME" | "EXPENSE";
 type ProposedTransaction = { type: TransactionType; accountId: number; categoryId: number; amount: string; date: string; description?: string };
 
@@ -250,6 +252,17 @@ function sameJsonValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+/** A sale is executable only from the exact Finance MCP quote returned in this turn. */
+function hasMatchingSaleQuote(messages: readonly DeepSeekChatMessage[], arguments_: Record<string, unknown>): boolean {
+  return messages.some((message) => {
+    if (message.role !== "tool") return false;
+    try {
+      const parsed = JSON.parse(message.content) as { structuredContent?: { recordArguments?: unknown } };
+      return sameJsonValue(parsed.structuredContent?.recordArguments, arguments_);
+    } catch { return false; }
+  });
+}
+
 function validatePendingWrite(
   toolRegistry: HostMcpToolRegistry,
   pendingOperation: PendingWriteOperation,
@@ -325,6 +338,9 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
           }
 
           const write = normalized ?? writes[0];
+          if (write.tool.definition.name === SALE_TOOL_NAME && !hasMatchingSaleQuote(turnMessages, write.arguments)) {
+            throw new ChatOrchestrationError("SALE_QUOTE_REQUIRED", "A sale must be quoted before confirmation.");
+          }
           if (normalized) {
             turnMessages[turnMessages.length - 1] = {
               role: "assistant",
@@ -393,6 +409,8 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
       if (toolResult.isError) {
         const response = fallbackResponse([HOMOGENEOUS_BATCH_TOOL_NAME, MIXED_BATCH_TOOL_NAME].includes(input.pendingOperation.toolName)
           ? "No se registró ningún movimiento del lote."
+          : input.pendingOperation.toolName === SALE_TOOL_NAME
+            ? "No se registró la venta. No se modificó el inventario ni el ingreso."
           : "La operación fue rechazada por Finance MCP. No se completó el cambio solicitado.");
         return {
           status: "completed",
@@ -411,7 +429,7 @@ export function createChatOrchestrator(options: CreateChatOrchestratorOptions): 
           toolMessage,
         ]);
       } catch {
-        finalResponse = fallbackResponse([HOMOGENEOUS_BATCH_TOOL_NAME, MIXED_BATCH_TOOL_NAME].includes(input.pendingOperation.toolName) ? "Se registraron correctamente los movimientos del lote." : "La operación se ejecutó correctamente.");
+        finalResponse = fallbackResponse([HOMOGENEOUS_BATCH_TOOL_NAME, MIXED_BATCH_TOOL_NAME].includes(input.pendingOperation.toolName) ? "Se registraron correctamente los movimientos del lote." : input.pendingOperation.toolName === SALE_TOOL_NAME ? "Se registró correctamente la venta." : "La operación se ejecutó correctamente.");
       }
       ensureFinalContent(finalResponse);
       return {

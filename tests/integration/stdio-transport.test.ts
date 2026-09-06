@@ -100,7 +100,7 @@ describe("local MCP STDIO transport", () => {
           { name: "record_income" }, { name: "record_expense" }, { name: "record_transactions_batch" }, { name: "record_mixed_transactions_batch" }, { name: "list_transactions" }, { name: "update_transaction" }, { name: "delete_transaction" },
           { name: "record_debt" }, { name: "list_debts" }, { name: "update_debt" }, { name: "mark_debt_paid" }, { name: "delete_debt" },
           { name: "record_receivable" }, { name: "list_receivables" }, { name: "update_receivable" }, { name: "mark_receivable_collected" }, { name: "delete_receivable" },
-          { name: "create_product" }, { name: "list_products" }, { name: "update_product" }, { name: "record_inventory_movement" }, { name: "list_low_stock_products" },
+          { name: "create_product" }, { name: "list_products" }, { name: "update_product" }, { name: "record_inventory_movement" }, { name: "list_low_stock_products" }, { name: "quote_sale" }, { name: "record_sale" }, { name: "list_sales" },
           { name: "get_current_balance" }, { name: "get_cash_flow_summary" },
           { name: "project_cash_flow" },
           { name: "evaluate_purchase_viability" },
@@ -156,9 +156,9 @@ describe("local MCP STDIO transport", () => {
       await registerFinanceMcpTools(registry, toolClient);
 
       const registered = registry.list();
-      expect(registered).toHaveLength(27);
-      expect(registered.filter((tool) => tool.isWriteOperation)).toHaveLength(17);
-      expect(registered.filter((tool) => !tool.isWriteOperation)).toHaveLength(10);
+      expect(registered).toHaveLength(30);
+      expect(registered.filter((tool) => tool.isWriteOperation)).toHaveLength(18);
+      expect(registered.filter((tool) => !tool.isWriteOperation)).toHaveLength(12);
       expect(registered.every((tool) => tool.serverId === "finance-mcp")).toBe(true);
       expect(registered.map((tool) => tool.definition)).toEqual(discovered);
       expect(registry.toDeepSeekTools()).toEqual(

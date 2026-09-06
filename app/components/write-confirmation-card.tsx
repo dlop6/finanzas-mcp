@@ -24,7 +24,18 @@ export type MixedTransactionBatchPreview = {
   items: Array<{ type: "INCOME" | "EXPENSE"; accountName: string; categoryName: string; amount: string; date: string; description?: string }>;
 };
 
-export type TransactionPreview = TransactionBatchPreview | MixedTransactionBatchPreview;
+export type SalePreview = {
+  kind: "sale";
+  currency: "GTQ";
+  accountName: string;
+  categoryName: string;
+  date: string;
+  description?: string;
+  totalAmount: string;
+  lines: Array<{ productName: string; quantity: number; pricingLabel: string; catalogUnitPrice: string; appliedUnitPrice?: string; amount: string }>;
+};
+
+export type TransactionPreview = TransactionBatchPreview | MixedTransactionBatchPreview | SalePreview;
 
 export type ConfirmationState = "pending" | "confirming" | "cancelling" | "confirmed" | "rejected" | "unknown" | "cancelled" | "error";
 
@@ -53,7 +64,7 @@ function stateLabel(state: ConfirmationState): string {
   return "CONFIRMACIÓN REQUERIDA";
 }
 
-function transactionTypeLabel(item: TransactionPreview["items"][number]): string {
+function transactionTypeLabel(item: TransactionBatchPreview["items"][number] | MixedTransactionBatchPreview["items"][number]): string {
   return "type" in item && item.type === "INCOME" ? "Ingreso" : "Gasto";
 }
 
@@ -86,7 +97,24 @@ export default function WriteConfirmationCard({ messageId, operation, state, sta
       {state === "cancelled" ? <p className={styles.confirmationResult}>Operación cancelada.</p> : null}
       {state === "confirmed" ? <p className={styles.confirmationResult}>Operación ejecutada.</p> : null}
       {stateMessage ? <p className={styles.confirmationError} role="alert">{stateMessage}</p> : null}
-      {operation.preview ? (
+      {operation.preview?.kind === "sale" ? (
+        <>
+          <p className={styles.confirmationWarning}>La venta registrará el ingreso y todas las salidas de inventario como una sola operación. Si una línea falla, no se guardará ningún cambio.</p>
+          <dl className={styles.confirmationMetadata}>
+            <div><dt>Cuenta de cobro</dt><dd>{operation.preview.accountName}</dd></div>
+            <div><dt>Categoría</dt><dd>{operation.preview.categoryName}</dd></div>
+            <div><dt>Fecha</dt><dd><time dateTime={operation.preview.date}>{operation.preview.date}</time></dd></div>
+            <div><dt>Monto cobrado</dt><dd>{operation.preview.currency} {operation.preview.totalAmount}</dd></div>
+          </dl>
+          <div className={styles.confirmationTableWrap} tabIndex={0} aria-label="Vista previa completa de la venta">
+            <table className={styles.confirmationTable}>
+              <caption>Productos que se descontarán y precio aplicado</caption>
+              <thead><tr><th scope="col">Producto</th><th scope="col">Cantidad</th><th scope="col">Precio aplicado</th><th scope="col">Origen del precio</th><th scope="col">Importe</th></tr></thead>
+              <tbody>{operation.preview.lines.map((line, index) => <tr key={`${line.productName}-${index}`}><td>{line.productName}</td><td>{line.quantity}</td><td>{operation.preview!.currency} {line.appliedUnitPrice ?? line.catalogUnitPrice}</td><td>{line.pricingLabel}</td><td>{operation.preview!.currency} {line.amount}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </>
+      ) : operation.preview ? (
         <div className={styles.confirmationTableWrap} tabIndex={0} aria-label="Vista previa completa del lote">
           <table className={styles.confirmationTable}>
             <caption>{operation.preview.kind === "transaction_batch" ? `${operation.preview.transactionType === "INCOME" ? "Ingresos" : "Gastos"} que se registrarán en una sola operación` : "Ingresos y gastos que se registrarán en una sola operación"}</caption>

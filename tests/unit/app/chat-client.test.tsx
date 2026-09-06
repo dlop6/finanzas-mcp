@@ -113,6 +113,21 @@ describe("ChatClient", () => {
     await waitFor(() => expect(document.activeElement).toBe(input));
   });
 
+  it("reuses the exact failed message on an explicit retry instead of duplicating it", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: { code: "CHAT_FAILED", message: "No fue posible completar la respuesta del chat." } }, 502))
+      .mockResolvedValueOnce(jsonResponse({ status: "completed", sessionId: "session-1", message: "Listo" }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ChatClient />);
+    const input = screen.getByLabelText("Mensaje");
+    fireEvent.change(input, { target: { value: "Reintento explícito" } });
+    fireEvent.submit(input.closest("form")!);
+    await screen.findByRole("alert");
+    fireEvent.submit(input.closest("form")!);
+    await screen.findByText("Listo");
+    expect(screen.getAllByText("Reintento explícito")).toHaveLength(1);
+  });
+
   it("keeps user messages and Host confirmation messages as literal text", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
       status: "confirmation_required",
@@ -257,6 +272,22 @@ describe("ChatClient", () => {
     expect(table.textContent).toMatch(/Ingreso[\s\S]*Gasto/);
     expect(table.textContent).toMatch(/Efectivo[\s\S]*Banco/);
     expect(table.textContent).not.toContain("accountId");
+  });
+
+  it("renders a sale preview with both financial and inventory effects", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      status: "confirmation_required", sessionId: "session-1", message: "Revisa la venta.",
+      pendingOperation: { serverId: "finance-mcp", toolName: "record_sale", arguments: { accountId: 1, categoryId: 1 }, description: "Registrar una venta con un ingreso y una salida de inventario en una sola operación.", preview: { kind: "sale", currency: "GTQ", accountName: "Banco", categoryName: "Ventas", date: "2026-09-06", totalAmount: "75.00", lines: [{ productName: "Azúcar 1 lb", quantity: 10, pricingLabel: "Precio de catálogo", catalogUnitPrice: "7.50", amount: "75.00" }] } },
+    })));
+    render(<ChatClient />);
+    fireEvent.change(screen.getByLabelText("Mensaje"), { target: { value: "Vende azúcar" } });
+    fireEvent.submit(screen.getByLabelText("Mensaje").closest("form")!);
+    await screen.findByText("Productos que se descontarán y precio aplicado");
+    const table = screen.getByRole("table");
+    expect(table.textContent).toContain("Azúcar 1 lb");
+    expect(table.textContent).toContain("Precio de catálogo");
+    expect(screen.getByText("Monto cobrado")).toBeTruthy();
+    expect(screen.getByText(/La venta registrará el ingreso y todas las salidas/)).toBeTruthy();
   });
 
   it("cancels a pending operation without creating a user message", async () => {

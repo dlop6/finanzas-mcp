@@ -19,7 +19,17 @@ export type MixedTransactionBatchPreview = {
   items: Array<{ type: "INCOME" | "EXPENSE"; accountName: string; categoryName: string; amount: string; date: string; description?: string }>;
 };
 
-export type TransactionPreview = TransactionBatchPreview | MixedTransactionBatchPreview;
+export type SalePreview = {
+  kind: "sale";
+  currency: "GTQ";
+  accountName: string;
+  categoryName: string;
+  date: string;
+  description?: string;
+  lines: Array<{ productName: string; quantity: number; pricingLabel: string; catalogUnitPrice: string; appliedUnitPrice?: string; amount: string }>;
+  totalAmount: string;
+};
+export type TransactionPreview = TransactionBatchPreview | MixedTransactionBatchPreview | SalePreview;
 export type WriteOperationPresentation = { description: string; preview?: TransactionPreview };
 
 export const financeWriteToolNames = [
@@ -40,6 +50,7 @@ export const financeWriteToolNames = [
   "create_product",
   "update_product",
   "record_inventory_movement",
+  "record_sale",
 ] as const;
 
 function fail(): never {
@@ -93,6 +104,18 @@ function mixedBatchTransactions(args: Record<string, unknown>): Array<{ type: "I
     return Object.hasOwn(item, "description") ? { ...result, description: text(item, "description") } : result;
   });
   return new Set(transactions.map((transaction) => transaction.type)).size === 2 ? transactions : fail();
+}
+
+function saleLines(args: Record<string, unknown>): Array<{ productId: number; quantity: number; pricingMode: "CATALOG" | "CUSTOM_UNIT" | "CUSTOM_LINE"; catalogUnitPrice: string; appliedUnitPrice?: string; amount: string }> {
+  const values = args.lines;
+  if (!Array.isArray(values) || values.length < 1 || values.length > 25) return fail();
+  return values.map((value) => {
+    const item = object(value as Record<string, unknown>);
+    const pricingMode = text(item, "pricingMode");
+    if (pricingMode !== "CATALOG" && pricingMode !== "CUSTOM_UNIT" && pricingMode !== "CUSTOM_LINE") return fail();
+    const line = { productId: integer(item, "productId"), quantity: integer(item, "quantity"), pricingMode: pricingMode as "CATALOG" | "CUSTOM_UNIT" | "CUSTOM_LINE", catalogUnitPrice: text(item, "catalogUnitPrice"), amount: text(item, "amount") };
+    return Object.hasOwn(item, "appliedUnitPrice") ? { ...line, appliedUnitPrice: text(item, "appliedUnitPrice") } : line;
+  });
 }
 
 function updateFields(args: Record<string, unknown>, fields: readonly [string, string, "text" | "money" | "integer"][]): string {
@@ -164,6 +187,18 @@ export class FinanceWriteOperationDescriber implements WriteOperationDescriber {
             })),
           },
         }));
+      }
+      case "record_sale": {
+        const accountId = integer(args, "accountId");
+        const categoryId = integer(args, "categoryId");
+        const date = text(args, "date");
+        const lines = saleLines(args);
+        const format = (references: { accountName: string; categoryName: string; productNames: string[] }): WriteOperationPresentation => ({
+          description: `Registrar una venta con un ingreso y ${lines.length} salida${lines.length === 1 ? "" : "s"} de inventario en una sola operación. Si una línea falla, no se guardará ningún cambio.`,
+          preview: { kind: "sale", currency: "GTQ", accountName: references.accountName, categoryName: references.categoryName, date, ...(Object.hasOwn(args, "description") ? { description: text(args, "description") } : {}), lines: lines.map((line, index) => ({ productName: references.productNames[index]!, quantity: line.quantity, pricingLabel: line.pricingMode === "CATALOG" ? "Precio de catálogo" : line.pricingMode === "CUSTOM_UNIT" ? "Precio unitario aplicado" : "Monto aplicado por línea", catalogUnitPrice: line.catalogUnitPrice, ...(line.appliedUnitPrice === undefined ? {} : { appliedUnitPrice: line.appliedUnitPrice }), amount: line.amount })), totalAmount: text(args, "totalAmount") },
+        });
+        if (!this.transactionReferences || !context) return { description: "Registrar una venta con su ingreso y sus salidas de inventario como una sola operación." };
+        return this.transactionReferences.resolveSale(context.sessionId, accountId, categoryId, lines.map((line) => line.productId)).then(format);
       }
       case "update_transaction":
         return `Actualizar la transacción ${integer(args, "transactionId")}: ${updateFields(args, [["accountId", "cuenta", "integer"], ["categoryId", "categoría", "integer"], ["amount", "monto", "money"], ["date", "fecha", "text"], ["description", "descripción", "text"]])}.`;

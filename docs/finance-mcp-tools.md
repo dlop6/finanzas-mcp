@@ -10,7 +10,7 @@ Finance MCP is a local Model Context Protocol server for the financial administr
 - Authoritative calculations: Finance MCP services. An LLM may explain results but must not calculate or override them.
 - Currency: GTQ only.
 - Canonical demo dataset date: `2026-08-08`.
-- Productive catalog: 27 tools, consisting of 17 writes and 10 reads.
+- Productive catalog: 30 tools, consisting of 18 writes and 12 reads.
 
 This document specifies the public wire contract. It does not expose Prisma models, repository interfaces, handlers, credentials, or other server internals.
 
@@ -81,7 +81,7 @@ Notifications have no ID and produce no response.
 }
 ```
 
-The result contains all 27 definitions in the order listed in [Tool catalog](#5-tool-catalog). Each public definition contains exactly `name`, `description`, and `inputSchema`. The internal `isWriteOperation` flag is deliberately not part of the MCP wire format.
+The result contains all 30 definitions in the order listed in [Tool catalog](#5-tool-catalog). Each public definition contains exactly `name`, `description`, and `inputSchema`. The internal `isWriteOperation` flag is deliberately not part of the MCP wire format.
 
 ### 2.4 Call a tool
 
@@ -282,6 +282,9 @@ No error includes SQL, credentials, `DATABASE_URL`, stack traces, or internal Pr
 | 25 | `get_transaction_reference_data` | Read |
 | 26 | `record_transactions_batch` | Write |
 | 27 | `record_mixed_transactions_batch` | Write |
+| 28 | `quote_sale` | Read |
+| 29 | `record_sale` | Write |
+| 30 | `list_sales` | Read |
 
 ## 6. Domain entity map
 
@@ -291,6 +294,7 @@ No error includes SQL, credentials, `DATABASE_URL`, stack traces, or internal Pr
 | Debts | `Business`, `Debt` |
 | Receivables | `Business`, `Receivable` |
 | Inventory | `Business`, `Product`, `InventoryMovement` |
+| Sales | `Business`, `Sale`, `SaleLine`, `Transaction`, `InventoryMovement`, `Product` |
 | Current balance and cash flow | `Business`, `Account`, `Transaction` |
 | Projection | `Business`, `Account`, `Transaction`, `FixedExpense`, `Debt`, `Receivable` |
 | Purchase viability | `Business` and the projection result |
@@ -1770,7 +1774,27 @@ FINANCE_MCP_REMOTE_URL=https://finanzas-mcp-server.onrender.com/mcp
 
 `remote` requires an HTTPS URL whose path is exactly `/mcp`, without credentials, query, or fragment. It uses a 60-second timeout and never falls back to local STDIO. In `local` mode, Finance MCP uses STDIO and local PostgreSQL; Filesystem and Git MCP remain local in both modes. The remote deployment uses Render's internal PostgreSQL URL as `DATABASE_URL`; an external Render URL is only for the guarded `db:remote:setup` command and is never part of MCP traffic.
 
-## 17. Chatbot and Host examples
+## 17. Sales tools
+
+### `quote_sale`
+
+Purpose: calculate a proposed sale without modifying financial or inventory data. Operation: **Read**.
+
+The input identifies one income account, one compatible income category, a date, an optional description, and one to 25 product lines. Each line contains a product and positive quantity. Catalog price is used by default. A line may instead provide either a positive `unitPrice` or a positive `lineAmount`, never both. Finance MCP validates ownership and available stock, performs decimal arithmetic, and returns product and reference names, the exact collected amount, price origin for every line, and canonical `recordArguments`.
+
+### `record_sale`
+
+Purpose: record a previously quoted sale atomically. Operation: **Write**.
+
+The tool receives canonical quote arguments, including the catalog price observed for each line and the total amount. It validates references, stock, price freshness, and amounts. A single database transaction creates one income transaction, one sale, one inventory exit per line, and the persistent links among them. If any validation or persistence step fails, no sale, income, inventory exit, or stock update is kept.
+
+### `list_sales`
+
+Purpose: read sales as linked financial and inventory units. Operation: **Read**.
+
+Optional `saleId`, `startDate`, and `endDate` filters are accepted. Results are isolated to the active business and ordered by sale date and ID descending. Each result includes the collected amount, account and category names, and each product line with quantity, pricing mode, and amount.
+
+## 18. Chatbot and Host examples
 
 The chatbot never talks to Finance MCP directly. The Host completes `initialize`, `notifications/initialized`, and `tools/list`, then routes a model-requested read or an already-confirmed write to the registered `finance-mcp` client. Finance values remain structured MCP results until the model explains them.
 

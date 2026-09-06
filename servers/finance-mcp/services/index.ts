@@ -9,4 +9,5 @@ export * from "./receivable-service";
 export * from "./results";
 export * from "./transaction-service";
 export * from "./transaction-reference-service";
+export * from "./sale-service";
 export * from "./validation";

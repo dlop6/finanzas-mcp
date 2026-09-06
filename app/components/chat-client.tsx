@@ -23,6 +23,9 @@ type ApiError = { error: { code: string; message: string }; sessionId?: string }
 function isTransactionPreview(value: unknown): value is PendingOperationView["preview"] {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const preview = value as Record<string, unknown>;
+  if (preview.kind === "sale") {
+    return preview.currency === "GTQ" && typeof preview.accountName === "string" && typeof preview.categoryName === "string" && typeof preview.date === "string" && typeof preview.totalAmount === "string" && Array.isArray(preview.lines) && preview.lines.every((line) => typeof line === "object" && line !== null && typeof (line as Record<string, unknown>).productName === "string" && typeof (line as Record<string, unknown>).quantity === "number" && typeof (line as Record<string, unknown>).pricingLabel === "string" && typeof (line as Record<string, unknown>).catalogUnitPrice === "string" && typeof (line as Record<string, unknown>).amount === "string");
+  }
   const items = preview.items;
   const validItems = Array.isArray(items) && items.every((item) => {
       if (typeof item !== "object" || item === null || Array.isArray(item)) return false;
@@ -99,6 +102,15 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
     return id;
   };
 
+  const addOrReuseUserMessage = (text: string) => {
+    const last = [...messages].reverse().find((message): message is UserMessage => message.role === "user");
+    if (last?.delivery === "failed" && last.text === text) {
+      setMessages((current) => current.map((entry) => entry.id === last.id ? { ...entry, delivery: undefined } : entry));
+      return last.id;
+    }
+    return addMessage({ role: "user", format: "plain", text });
+  };
+
   const markUserMessageFailed = (id: number) => setMessages((current) => current.map((message) => message.role === "user" && message.id === id ? { ...message, delivery: "failed" } : message));
 
   const updateConfirmation = (id: number, update: Partial<Pick<ConfirmationMessage, "confirmationState" | "text" | "operation" | "stateMessage">>) => {
@@ -127,7 +139,7 @@ export default function ChatClient({ embedded = false, onSessionIdChange }: { em
     setRequestDelayed(false);
     requestInFlight.current = true;
     setStatus("sending_message");
-    const submittedMessageId = addMessage({ role: "user", format: "plain", text: message });
+    const submittedMessageId = addOrReuseUserMessage(message);
     try {
       const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(sessionId ? { sessionId } : {}), message }) });
       const body = await parseResponse(response);

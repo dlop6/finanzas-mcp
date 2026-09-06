@@ -42,6 +42,13 @@ export class InventoryIntegrityError extends FinanceRepositoryError {
   }
 }
 
+export class SaleValidationError extends FinanceRepositoryError {
+  constructor(message: string) {
+    super(message);
+    this.name = "SaleValidationError";
+  }
+}
+
 export function normalizePersistenceError(error: unknown, entity: string, id?: number): FinanceRepositoryError {
   if (error instanceof FinanceRepositoryError) {
     return error;

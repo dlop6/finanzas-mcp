@@ -5,6 +5,7 @@ import { DebtRepository } from "./debt-repository";
 import { InventoryRepository } from "./inventory-repository";
 import { ReceivableRepository } from "./receivable-repository";
 import { TransactionRepository } from "./transaction-repository";
+import { SaleRepository } from "./sale-repository";
 
 export { BusinessRepository } from "./business-repository";
 export { DebtRepository } from "./debt-repository";
@@ -12,6 +13,8 @@ export * from "./errors";
 export { InventoryRepository } from "./inventory-repository";
 export { ReceivableRepository } from "./receivable-repository";
 export { TransactionRepository } from "./transaction-repository";
+export { SaleRepository } from "./sale-repository";
+export type * from "./sale-repository";
 export type * from "./debt-repository";
 export type * from "./inventory-repository";
 export type * from "./receivable-repository";
@@ -23,6 +26,7 @@ export type FinanceRepositories = {
   debts: DebtRepository;
   receivables: ReceivableRepository;
   inventory: InventoryRepository;
+  sales: SaleRepository;
 };
 
 export function createFinanceRepositories(prisma: PrismaClient): FinanceRepositories {
@@ -32,5 +36,6 @@ export function createFinanceRepositories(prisma: PrismaClient): FinanceReposito
     debts: new DebtRepository(prisma),
     receivables: new ReceivableRepository(prisma),
     inventory: new InventoryRepository(prisma),
+    sales: new SaleRepository(prisma),
   };
 }

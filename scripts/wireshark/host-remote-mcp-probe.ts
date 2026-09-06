@@ -33,7 +33,7 @@ export type SafeHostLogEntry = {
 };
 
 export type HostRemoteCaptureSummary = {
-  toolCount: 27;
+  toolCount: 30;
   readTool: "get_current_balance";
   transport: "STREAMABLE_HTTP";
   lifecycleValidated: true;
@@ -137,7 +137,7 @@ export async function runHostRemoteMcpProbe(endpoint: string, options: HostRemot
     const registered = registry.list();
     const writeCount = registered.filter((tool) => tool.isWriteOperation).length;
     const readCount = registered.length - writeCount;
-    if (registered.length !== 27 || writeCount !== 17 || readCount !== 10 || registered.some((tool) => tool.serverId !== "finance-mcp")) {
+    if (registered.length !== 30 || writeCount !== 18 || readCount !== 12 || registered.some((tool) => tool.serverId !== "finance-mcp")) {
       throw new HostRemoteMcpProbeError("TOOL_CONTRACT_MISMATCH");
     }
 
@@ -153,7 +153,7 @@ export async function runHostRemoteMcpProbe(endpoint: string, options: HostRemot
     }
 
     const summary: HostRemoteCaptureSummary = {
-      toolCount: 27,
+      toolCount: 30,
       readTool: "get_current_balance",
       transport: "STREAMABLE_HTTP",
       lifecycleValidated: true,
@@ -188,7 +188,7 @@ if (isEntrypoint) {
     ? undefined
     : async (summary: HostRemoteCaptureSummary) => writeFile(summaryPath, `${JSON.stringify(summary)}\n`, "utf8");
   runHostRemoteMcpProbe(endpoint ?? "", { writeSummary })
-    .then(() => process.stdout.write("Host remote MCP capture probe completed: 27 tools and one read operation.\n"))
+    .then(() => process.stdout.write("Host remote MCP capture probe completed: 30 tools and one read operation.\n"))
     .catch((error: unknown) => {
       const code = error instanceof HostRemoteMcpProbeError ? error.code : "READ_TOOL_FAILED";
       process.stderr.write(`Host remote MCP capture probe failed: ${code}.\n`);

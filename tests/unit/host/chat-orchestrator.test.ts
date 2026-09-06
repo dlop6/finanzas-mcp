@@ -38,6 +38,9 @@ const mixedBatchWriteTool: McpTool = {
   inputSchema: { type: "object", additionalProperties: false, properties: {} },
 };
 
+const quoteSaleTool: McpTool = { name: "quote_sale", description: "Quotes a sale.", inputSchema: { type: "object", additionalProperties: false, properties: {} } };
+const recordSaleTool: McpTool = { name: "record_sale", description: "Records a sale.", inputSchema: { type: "object", additionalProperties: false, properties: {} } };
+
 function response(overrides: Partial<DeepSeekChatResult> = {}): DeepSeekChatResult {
   return {
     content: "Final answer.",
@@ -303,6 +306,26 @@ describe("chat orchestration", () => {
         { type: "EXPENSE", accountId: 2, categoryId: 4, amount: "5.00", date: "2026-09-05" },
       ] });
     }
+    expect(client.toolsCall).not.toHaveBeenCalled();
+  });
+
+  it("requires the exact Finance quote before offering a sale confirmation", async () => {
+    const recordArguments = { accountId: 1, categoryId: 1, date: "2026-09-06", totalAmount: "75.00", lines: [{ productId: 3, quantity: 10, pricingMode: "CATALOG", catalogUnitPrice: "7.50", amount: "75.00" }] };
+    const client = toolClient({ content: [{ type: "text", text: "quoted" }], structuredContent: { recordArguments } });
+    const registry = await registryWith([quoteSaleTool, recordSaleTool], client, ["record_sale"], "finance-mcp");
+    const deepSeek = llm(
+      response({ toolCalls: [{ id: "quote", type: "function", function: { name: "quote_sale", arguments: "{}" } }] }),
+      response({ toolCalls: [{ id: "sale", type: "function", function: { name: "record_sale", arguments: JSON.stringify(recordArguments) } }] }),
+    );
+    await expect(createChatOrchestrator({ deepSeekClient: deepSeek, toolRegistry: registry }).run(input)).resolves.toMatchObject({ status: "confirmation_required", pendingOperation: { toolName: "record_sale", arguments: recordArguments } });
+    expect(client.toolsCall).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an unquoted sale before any write runs", async () => {
+    const client = toolClient();
+    const registry = await registryWith([recordSaleTool], client, ["record_sale"], "finance-mcp");
+    const deepSeek = llm(response({ toolCalls: [{ id: "sale", type: "function", function: { name: "record_sale", arguments: "{}" } }] }));
+    await expect(createChatOrchestrator({ deepSeekClient: deepSeek, toolRegistry: registry }).run(input)).rejects.toMatchObject({ code: "SALE_QUOTE_REQUIRED" });
     expect(client.toolsCall).not.toHaveBeenCalled();
   });
 

@@ -5,6 +5,7 @@ type TransactionKind = "INCOME" | "EXPENSE";
 export type ResolvedTransactionReferences = { accountName: string; categoryName: string };
 export type BatchTransactionReferenceInput = { accountId: number; categoryId: number };
 export type MixedBatchTransactionReferenceInput = BatchTransactionReferenceInput & { type: TransactionKind };
+export type ResolvedSaleReference = { accountName: string; categoryName: string; productNames: string[] };
 
 function fail(): never {
   throw new ConfirmationError("TRANSACTION_REFERENCE_LOOKUP_FAILED", "The transaction references could not be verified.");
@@ -51,6 +52,15 @@ export class TransactionReferenceResolver {
     });
   }
 
+  async resolveSale(sessionId: string, accountId: number, categoryId: number, productIds: readonly number[]): Promise<ResolvedSaleReference> {
+    const [financial, products] = await Promise.all([this.getContent(sessionId, "INCOME"), this.getProducts(sessionId)]);
+    return {
+      accountName: namedId(financial.accounts, accountId),
+      categoryName: namedId(financial.categories, categoryId, "INCOME"),
+      productNames: productIds.map((id) => namedId(products, id)),
+    };
+  }
+
   private async getContent(sessionId: string, kind: TransactionKind): Promise<Record<string, unknown>> {
     const tool = this.registry.resolve("get_transaction_reference_data");
     if (tool.serverId !== "finance-mcp" || tool.isWriteOperation) return fail();
@@ -62,5 +72,14 @@ export class TransactionReferenceResolver {
     }
     if (result.isError || !isRecord(result.structuredContent)) return fail();
     return structuredClone(result.structuredContent);
+  }
+
+  private async getProducts(sessionId: string): Promise<unknown> {
+    const tool = this.registry.resolve("list_products");
+    if (tool.serverId !== "finance-mcp" || tool.isWriteOperation) return fail();
+    let result;
+    try { result = await tool.client.toolsCall(tool.definition.name, {}, { sessionId }); } catch { return fail(); }
+    if (result.isError || !isRecord(result.structuredContent)) return fail();
+    return result.structuredContent.products;
   }
 }

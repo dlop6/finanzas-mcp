@@ -31,6 +31,7 @@ describe("Finance MCP against isolated PostgreSQL", () => {
       "record_debt", "list_debts", "update_debt", "mark_debt_paid", "delete_debt",
       "record_receivable", "list_receivables", "update_receivable", "mark_receivable_collected", "delete_receivable",
       "create_product", "list_products", "update_product", "record_inventory_movement", "list_low_stock_products",
+      "quote_sale", "record_sale", "list_sales",
       "get_current_balance", "get_cash_flow_summary", "project_cash_flow", "evaluate_purchase_viability",
       "get_transaction_reference_data",
     ]);
@@ -154,6 +155,37 @@ describe("Finance MCP against isolated PostgreSQL", () => {
     const insufficient = await harness.callTool("record_inventory_movement", { productId: created.product.id, type: "OUT", quantity: 99, date: "2026-08-08" });
     expect(insufficient.isError).toBe(true);
     expect((await prisma.product.findUnique({ where: { id: created.product.id } }))?.stock).toBe(3);
+  });
+
+  it("quotes and records a sale as one income and its inventory exits", async () => {
+    const product = data<{ products: Array<{ id: number; name: string; salePrice: string; stock: number }> }>(await harness.callTool("list_products", {})).products.find((entry) => entry.name === "Azúcar 1 lb")!;
+    const beforeTransactions = await prisma.transaction.count();
+    const beforeMovements = await prisma.inventoryMovement.count();
+    const beforeStock = product.stock;
+    const quote = data<{ totalAmount: string; recordArguments: Record<string, unknown>; lines: Array<{ product: { name: string }; pricingMode: string }> }>(await harness.callTool("quote_sale", {
+      accountId: 1, categoryId: 1, date: "2026-08-10", description: "Venta de azúcar", lines: [{ productId: product.id, quantity: 2 }],
+    }));
+    expect(quote).toMatchObject({ totalAmount: (Number(product.salePrice) * 2).toFixed(2), lines: [{ product: { name: "Azúcar 1 lb" }, pricingMode: "CATALOG" }] });
+    expect(await prisma.transaction.count()).toBe(beforeTransactions);
+    const recorded = data<{ sale: { amount: string; lines: Array<{ quantity: number; productName: string }> } }>(await harness.callTool("record_sale", quote.recordArguments));
+    expect(recorded.sale).toMatchObject({ amount: quote.totalAmount, lines: [{ quantity: 2, productName: "Azúcar 1 lb" }] });
+    expect(await prisma.transaction.count()).toBe(beforeTransactions + 1);
+    expect(await prisma.inventoryMovement.count()).toBe(beforeMovements + 1);
+    expect((await prisma.product.findUnique({ where: { id: product.id } }))?.stock).toBe(beforeStock - 2);
+    const sales = data<{ sales: Array<{ amount: string; lines: Array<{ product: { name: string } }> }> }>(await harness.callTool("list_sales", {}));
+    expect(sales.sales[0]).toMatchObject({ amount: quote.totalAmount, lines: [{ product: { name: "Azúcar 1 lb" } }] });
+  });
+
+  it("rolls back a sale when one product lacks stock", async () => {
+    const product = data<{ products: Array<{ id: number; name: string }> }>(await harness.callTool("list_products", {})).products.find((entry) => entry.name === "Azúcar 1 lb")!;
+    const quote = data<{ recordArguments: Record<string, unknown> }>(await harness.callTool("quote_sale", {
+      accountId: 1, categoryId: 1, date: "2026-08-10", lines: [{ productId: product.id, quantity: 1 }],
+    }));
+    const invalid = structuredClone(quote.recordArguments) as { lines: Array<{ productId: number; quantity: number }> };
+    invalid.lines[0]!.quantity = 999;
+    const before = [await prisma.transaction.count(), await prisma.inventoryMovement.count(), await prisma.sale.count()];
+    expect((await harness.callTool("record_sale", invalid)).isError).toBe(true);
+    expect([await prisma.transaction.count(), await prisma.inventoryMovement.count(), await prisma.sale.count()]).toEqual(before);
   });
 
   it("returns deterministic balance and period cash flow", async () => {
